@@ -30,3 +30,9 @@ func TestEncodeProducesDecodableJPEG(t *testing.T) {
 		t.Fatalf("bad bounds %v", b)
 	}
 }
+
+func TestEncodeRejectsOversize(t *testing.T) {
+	if _, err := Encode(image.NewRGBA(image.Rect(0, 0, 65536, 1)), 70); err == nil {
+		t.Fatal("expected error for width > 65535")
+	}
+}
