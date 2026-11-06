@@ -45,7 +45,7 @@ func run(args []string) int {
 	defer g.fail() // closes both conns on any exit
 	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
-	ebiten.SetWindowTitle(titleReleased)
+	ebiten.SetWindowTitle(titleCaptured)
 	g.start()
 	if err := ebiten.RunGame(g); err != nil && err != ebiten.Termination {
 		fmt.Fprintln(os.Stderr, "rdview:", err)

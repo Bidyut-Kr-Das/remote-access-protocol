@@ -48,7 +48,7 @@ type game struct {
 }
 
 func newGame(screen, input net.Conn, w, h int) *game {
-	g := &game{screen: screen, input: input, w: w, h: h, backing: image.NewRGBA(image.Rect(0, 0, w, h))}
+	g := &game{screen: screen, input: input, w: w, h: h, captured: true, backing: image.NewRGBA(image.Rect(0, 0, w, h))}
 	g.lastPong.Store(time.Now().UnixNano())
 	return g
 }
@@ -133,10 +133,10 @@ func (g *game) Update() error {
 	if g.dead.Load() {
 		if g.deadAt.IsZero() {
 			g.deadAt = time.Now()
+			g.disconnected = true
 			ebiten.SetWindowTitle(titleDisconnected)
 		}
 		if time.Since(g.deadAt) >= 2*time.Second {
-			g.disconnected = true
 			return ebiten.Termination
 		}
 		return nil
