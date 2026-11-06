@@ -18,13 +18,16 @@ func Write(w io.Writer, m Msg) error {
 }
 
 // Read receives one framed message.
-func Read(r io.Reader) (Msg, error) {
+func Read(r io.Reader) (Msg, error) { return ReadMax(r, MaxLen) }
+
+// ReadMax is Read with a smaller length cap, rejected before allocating.
+func ReadMax(r io.Reader, max uint32) (Msg, error) {
 	var h [4]byte
 	if _, err := io.ReadFull(r, h[:]); err != nil {
 		return nil, err
 	}
 	n := be.Uint32(h[:])
-	if n == 0 || n > MaxLen {
+	if n == 0 || n > max {
 		return nil, ErrOversize
 	}
 	body := make([]byte, n)

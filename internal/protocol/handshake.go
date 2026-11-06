@@ -82,7 +82,7 @@ func ServerHandshake(c io.ReadWriter, ip, password string, lim *Limiter,
 	if err := Write(c, ch); err != nil {
 		return 0, err
 	}
-	m, err := Read(c)
+	m, err := ReadMax(c, 64) // pre-auth: never allocate more than a Hello needs
 	if err != nil {
 		return 0, err
 	}
@@ -97,6 +97,9 @@ func ServerHandshake(c io.ReadWriter, ip, password string, lim *Limiter,
 		return 0, ErrDenied
 	}
 	if hello.Version != Version {
+		return deny()
+	}
+	if lim.Blocked(ip) { // parallel attempts may have locked this IP since we started
 		return deny()
 	}
 	want := HashPassword(password, ch.Nonce)
@@ -117,7 +120,7 @@ func ServerHandshake(c io.ReadWriter, ip, password string, lim *Limiter,
 
 // ClientHandshake answers the server's challenge and returns the screen size.
 func ClientHandshake(c io.ReadWriter, channel byte, password string) (w, h uint16, err error) {
-	m, err := Read(c)
+	m, err := ReadMax(c, 64)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -128,7 +131,7 @@ func ClientHandshake(c io.ReadWriter, channel byte, password string) (w, h uint1
 	if err = Write(c, Hello{Version: Version, Channel: channel, Hash: HashPassword(password, ch.Nonce)}); err != nil {
 		return 0, 0, err
 	}
-	if m, err = Read(c); err != nil {
+	if m, err = ReadMax(c, 64); err != nil {
 		return 0, 0, err
 	}
 	if o, ok := m.(OK); ok {

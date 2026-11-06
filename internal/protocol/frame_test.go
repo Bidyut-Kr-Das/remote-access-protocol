@@ -97,3 +97,15 @@ func TestHeaderLayout(t *testing.T) {
 		t.Fatalf("got % x want % x", b.Bytes(), want)
 	}
 }
+
+func TestReadMaxRejects(t *testing.T) {
+	var h [4]byte
+	binary.BigEndian.PutUint32(h[:], 65)
+	cr := &countReader{r: bytes.NewReader(append(h[:], make([]byte, 65)...))}
+	if _, err := ReadMax(cr, 64); !errors.Is(err, ErrOversize) {
+		t.Fatalf("got %v", err)
+	}
+	if cr.n != 4 {
+		t.Fatalf("consumed %d bytes, want 4", cr.n)
+	}
+}

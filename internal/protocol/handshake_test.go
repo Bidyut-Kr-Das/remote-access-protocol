@@ -203,3 +203,46 @@ func TestLockoutResetOnSuccess(t *testing.T) {
 		t.Fatal("success did not reset counter")
 	}
 }
+
+func TestHandshakeRejectsOversizeHeader(t *testing.T) {
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	res := runServer(t, s, "1.1.1.1", pw, newLim(), okAccept)
+	if _, err := Read(c); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Write([]byte{0, 0x10, 0, 0}); err != nil { // len = 1 MiB, no body follows
+		t.Fatal(err)
+	}
+	if r := <-res; r[1] != ErrOversize {
+		t.Fatalf("server err %v", r[1])
+	}
+}
+
+func TestLockoutAppliesMidHandshake(t *testing.T) {
+	lim := newLim()
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	res := runServer(t, s, "1.1.1.1", pw, lim, okAccept)
+	m, err := Read(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ { // parallel attempts lock the IP after our Challenge
+		lim.Fail("1.1.1.1")
+	}
+	if err := Write(c, Hello{Version: Version, Channel: ChannelScreen, Hash: HashPassword(pw, m.(Challenge).Nonce)}); err != nil {
+		t.Fatal(err)
+	}
+	if m, err = Read(c); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.(Deny); !ok {
+		t.Fatalf("got %T", m)
+	}
+	if r := <-res; r[1] != ErrDenied {
+		t.Fatalf("server err %v", r[1])
+	}
+}
