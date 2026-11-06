@@ -87,8 +87,9 @@ func TestPairTimeout(t *testing.T) {
 	} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
 		t.Fatal("conn not closed by pair timeout")
 	}
-	join(t, m, ln, protocol.ChannelScreen)
-	if s, ok, err, _ := join(t, m, ln, protocol.ChannelInput); err != nil || !ok || s == nil {
+	m2, ln2 := setup(t, time.Second)
+	join(t, m2, ln2, protocol.ChannelScreen)
+	if s, ok, err, _ := join(t, m2, ln2, protocol.ChannelInput); err != nil || !ok || s == nil {
 		t.Fatalf("new pair: %v %v %v", s, ok, err)
 	}
 }

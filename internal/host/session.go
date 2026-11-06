@@ -42,60 +42,52 @@ func (m *Manager) clearPending() {
 	m.pending, m.timer = nil, nil
 }
 
+// ok reports whether channel may join now. Caller holds mu.
+func (m *Manager) ok(channel byte) bool {
+	if m.active || (channel != protocol.ChannelScreen && channel != protocol.ChannelInput) {
+		return false
+	}
+	return m.pending == nil || *m.slot(m.pending, channel) == nil
+}
+
 // Accept runs the handshake on c. It returns (sess, true) only from the call that completes a pair.
-// Denied or timed-out conns are closed.
+// Denied or timed-out conns are closed. A conn joins pending only after its OK was written.
 func (m *Manager) Accept(c net.Conn) (*Session, bool) {
 	ip, _, err := net.SplitHostPort(c.RemoteAddr().String())
 	if err != nil {
 		c.Close()
 		return nil, false
 	}
-	var done *Session
 	c.SetReadDeadline(time.Now().Add(m.pairTimeout)) // silent peer must not hold us forever
-	_, err = protocol.ServerHandshake(c, ip, m.password, m.lim, func(channel byte) (uint16, uint16, bool) {
+	ch, err := protocol.ServerHandshake(c, ip, m.password, m.lim, func(channel byte) (uint16, uint16, bool) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		if m.active || (channel != protocol.ChannelScreen && channel != protocol.ChannelInput) {
-			return 0, 0, false
-		}
-		if m.pending == nil {
-			s := &Session{}
-			*m.slot(s, channel) = c
-			m.pending = s
-			m.timer = time.AfterFunc(m.pairTimeout, func() { m.expire(s) })
-		} else {
-			slot := m.slot(m.pending, channel)
-			if *slot != nil {
-				return 0, 0, false
-			}
-			*slot = c
-			done = m.pending
-			m.clearPending()
-			m.active = true
-		}
-		return m.w, m.h, true
+		return m.w, m.h, m.ok(channel)
 	})
-	if err == nil {
-		c.SetReadDeadline(time.Time{})
-		if done != nil {
-			return done, true
-		}
+	if err != nil {
+		c.Close()
 		return nil, false
 	}
-	m.rollback(c, done)
-	c.Close()
-	return nil, false
-}
+	c.SetReadDeadline(time.Time{})
 
-// rollback undoes a registration whose handshake failed after accept said yes.
-func (m *Manager) rollback(c net.Conn, done *Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if done != nil {
-		m.active = false
-	} else if m.pending != nil && (m.pending.Screen == c || m.pending.Input == c) {
-		m.clearPending()
+	if !m.ok(ch) { // lost a race after the OK was sent
+		c.Close()
+		return nil, false
 	}
+	if m.pending == nil {
+		s := &Session{}
+		*m.slot(s, ch) = c
+		m.pending = s
+		m.timer = time.AfterFunc(m.pairTimeout, func() { m.expire(s) })
+		return nil, false
+	}
+	*m.slot(m.pending, ch) = c
+	done := m.pending
+	m.clearPending()
+	m.active = true
+	return done, true
 }
 
 func (m *Manager) expire(s *Session) {
