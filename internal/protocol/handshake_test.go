@@ -136,3 +136,70 @@ func TestHandshakeBlockedIP(t *testing.T) {
 		t.Fatal("something was written")
 	}
 }
+
+// attempt runs one full handshake against lim; badVer sends Version 2 via a raw client.
+func attempt(t *testing.T, lim *Limiter, password string, badVer bool) error {
+	t.Helper()
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	res := runServer(t, s, "9.9.9.9", pw, lim, okAccept)
+	if badVer {
+		m, err := Read(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := m.(Challenge).Nonce
+		if err := Write(c, Hello{Version: 2, Channel: ChannelScreen, Hash: HashPassword(pw, n)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Read(c); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		ClientHandshake(c, ChannelScreen, password)
+	}
+	return (<-res)[1].(error)
+}
+
+func TestLockoutWrongPasswordCounts(t *testing.T) {
+	lim := newLim()
+	for i := 0; i < 3; i++ {
+		attempt(t, lim, "x", false)
+	}
+	if !lim.Blocked("9.9.9.9") {
+		t.Fatal("3 wrong passwords should block")
+	}
+}
+
+func TestLockoutBadVersionNoCount(t *testing.T) {
+	lim := newLim()
+	for i := 0; i < 3; i++ {
+		attempt(t, lim, pw, true)
+	}
+	if lim.Blocked("9.9.9.9") {
+		t.Fatal("bad version counted")
+	}
+}
+
+func TestLockoutResetOnSuccess(t *testing.T) {
+	lim := newLim()
+	attempt(t, lim, "x", false)
+	attempt(t, lim, "x", false)
+	// success returns nil error; attempt would panic on nil assertion, so run inline
+	s, c := net.Pipe()
+	res := runServer(t, s, "9.9.9.9", pw, lim, okAccept)
+	if _, _, err := ClientHandshake(c, ChannelScreen, pw); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-res; r[1] != nil {
+		t.Fatal(r[1])
+	}
+	s.Close()
+	c.Close()
+	attempt(t, lim, "x", false)
+	attempt(t, lim, "x", false)
+	if lim.Blocked("9.9.9.9") {
+		t.Fatal("success did not reset counter")
+	}
+}
