@@ -2,7 +2,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -68,10 +67,24 @@ func serve(sess *host.Session, w, h uint16) {
 	var lastPong atomic.Int64
 	lastPong.Store(time.Now().UnixNano())
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
+	frames := make(chan protocol.Frame, 1)
+
+	go func() { // screen sender: the only writer on Screen, so frames never interleave
+		defer wg.Done()
+		for f := range frames {
+			// Generous deadline: a client stalled this long is gone; any error ends the session.
+			sess.Screen.SetWriteDeadline(time.Now().Add(6 * time.Second))
+			if protocol.Write(sess.Screen, f) != nil {
+				stop()
+				return
+			}
+		}
+	}()
 
 	go func() { // capture
 		defer wg.Done()
+		defer close(frames)
 		t := time.NewTicker(100 * time.Millisecond)
 		defer t.Stop()
 		for {
@@ -88,14 +101,9 @@ func serve(sess *host.Session, w, h uint16) {
 			if err != nil {
 				continue
 			}
-			sess.Screen.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
-			if err := protocol.Write(sess.Screen, *f); err != nil {
-				var ne net.Error
-				if errors.As(err, &ne) && ne.Timeout() {
-					continue // slow client: drop this frame
-				}
-				stop()
-				return
+			select {
+			case frames <- *f:
+			default: // sender still busy with an earlier frame: skip this tick, never queue
 			}
 		}
 	}()
