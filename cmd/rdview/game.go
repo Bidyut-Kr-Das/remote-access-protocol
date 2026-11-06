@@ -168,6 +168,17 @@ func (g *game) Update() error {
 			g.send(protocol.Key{VK: vk, Down: 1})
 		}
 	}
+	// SendInput key-downs don't auto-repeat: resend held non-modifier keys after 0.5s, 30/s at 60 TPS.
+	for _, k := range inpututil.AppendPressedKeys(nil) {
+		if k == ebiten.KeyHome && (chord || g.skipHomeUp) {
+			continue
+		}
+		vk, ok := view.VK(k)
+		if d := inpututil.KeyPressDuration(k); !ok || (vk >= 0xA0 && vk <= 0xA5) || vk == 0x14 || d < 30 || (d-30)%2 != 0 {
+			continue
+		}
+		g.send(protocol.Key{VK: vk, Down: 1})
+	}
 	for _, k := range inpututil.AppendJustReleasedKeys(nil) {
 		if k == ebiten.KeyHome && (chord || g.skipHomeUp) {
 			g.skipHomeUp = false

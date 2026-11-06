@@ -35,6 +35,11 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "rdview: screen channel:", err)
 		return 2
 	}
+	if w == 0 || h == 0 || w > 8192 || h > 8192 {
+		screen.Close()
+		fmt.Fprintln(os.Stderr, "rdview: unsupported screen size", w, "x", h)
+		return 2
+	}
 	input, _, _, err := dial(addr, protocol.ChannelInput, *pw)
 	if err != nil {
 		screen.Close()
