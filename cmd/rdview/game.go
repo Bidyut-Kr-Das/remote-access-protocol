@@ -51,7 +51,7 @@ type game struct {
 
 func newGame(conn net.Conn, w, h int) *game {
 	return &game{conn: conn, w: w, h: h, captured: true, backing: image.NewRGBA(image.Rect(0, 0, w, h)),
-		clipDone: make(chan struct{}), clip: clipboard.New()}
+		img: ebiten.NewImage(w, h), clipDone: make(chan struct{}), clip: clipboard.New()}
 }
 
 // fail marks the session dead and closes the conn (idempotent).
@@ -133,9 +133,7 @@ func (g *game) Update() error {
 		if g.captured {
 			ebiten.SetWindowTitle(titleCaptured)
 		} else {
-			g.send(protocol.Key{VK: 0xA2, Down: 0}) // LCtrl up
-			g.send(protocol.Key{VK: 0xA4, Down: 0}) // LAlt up
-			g.send(protocol.Release{})
+			g.send(protocol.Release{}) // ups every held key, Ctrl/Alt included
 			ebiten.SetWindowTitle(titleReleased)
 		}
 	}
@@ -198,16 +196,10 @@ func (g *game) Update() error {
 func (g *game) Draw(dst *ebiten.Image) {
 	g.mu.Lock()
 	if g.dirty {
-		if g.img != nil {
-			g.img.Deallocate()
-		}
-		g.img = ebiten.NewImageFromImage(g.backing)
+		g.img.WritePixels(g.backing.Pix)
 		g.dirty = false
 	}
 	g.mu.Unlock()
-	if g.img == nil {
-		return
-	}
 	s, ox, oy := view.Fit(g.w, g.h, g.ww, g.wh)
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(s, s)
