@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1000 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="architecture-title architecture-desc" id="architecture-root">
+        <title id="architecture-title">RAP architecture: viewer and host</title>
+        <desc id="architecture-desc">rapview on PC A and raphost on PC B share one TCP session: the host capture loop streams JPEG frames to the viewer, the viewer forwards keyboard and mouse input to the host injector, and clipboard text syncs both ways.</desc>
+        <defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #architecture-root { --color-paper:  #0b1530;
+      --color-ink:    #e6eeff;
+      --color-muted:  #9fb3d9;
+      --color-accent: #22d3ee;
+      --font-sans:    'Geist', system-ui, sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', ui-monospace, monospace; }
+      #architecture-root { font-family: var(--font-sans); color: var(--color-ink); }
+      #architecture-root .diagram-container { width: 100%; overflow-x: auto; }
+      @media print {
+#architecture-root .diagram-container { overflow-x: visible; }
+}</style>
+          <pattern id="architecture-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="0.9" fill="#9fb3d9" fill-opacity="0.10"/>
+          </pattern>
+          <marker id="architecture-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><polygon points="0 0, 8 3, 0 6" fill="#9fb3d9"/></marker>
+          <marker id="architecture-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#22d3ee"/></marker>
+          <marker id="architecture-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#6ea8ff"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#0b1530"/>
+        <rect width="100%" height="100%" fill="url(#architecture-dots)" opacity="0.6"/>
+
+        <!-- Zones -->
+        <rect x="40" y="80" width="300" height="368" rx="8" fill="#6ea8ff" stroke="#9fb3d9" stroke-width="0.8" fill-opacity="0.03" stroke-opacity="0.20"/>
+        <rect x="54" y="72" width="232" height="16" rx="2" fill="#0b1530"/>
+        <text x="60" y="84" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.14em">PC A · VIEWER · rapview.exe</text>
+
+        <rect x="660" y="80" width="300" height="368" rx="8" fill="#6ea8ff" stroke="#9fb3d9" stroke-width="0.8" fill-opacity="0.03" stroke-opacity="0.20"/>
+        <rect x="674" y="72" width="222" height="16" rx="2" fill="#0b1530"/>
+        <text x="680" y="84" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.14em">PC B · HOST · raphost.exe</text>
+
+        <!-- Arrows (behind nodes) -->
+        <line x1="690" y1="152" x2="582" y2="152" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#architecture-arrow-accent)"/>
+        <line x1="420" y1="152" x2="312" y2="152" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#architecture-arrow-accent)"/>
+        <line x1="190" y1="184" x2="190" y2="238" stroke="#9fb3d9" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+        <line x1="310" y1="272" x2="418" y2="272" stroke="#6ea8ff" stroke-width="1.2" marker-end="url(#architecture-arrow-link)"/>
+        <line x1="580" y1="272" x2="688" y2="272" stroke="#6ea8ff" stroke-width="1.2" marker-end="url(#architecture-arrow-link)"/>
+        <line x1="312" y1="392" x2="418" y2="392" stroke="#9fb3d9" stroke-width="1" stroke-dasharray="5,4" marker-start="url(#architecture-arrow)" marker-end="url(#architecture-arrow)"/>
+        <line x1="582" y1="392" x2="688" y2="392" stroke="#9fb3d9" stroke-width="1" stroke-dasharray="5,4" marker-start="url(#architecture-arrow)" marker-end="url(#architecture-arrow)"/>
+
+        <!-- Arrow labels (masked, 10px above line) -->
+        <rect x="318" y="126" width="84" height="16" rx="2" fill="#0b1530"/>
+        <text x="360" y="138" fill="#22d3ee" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JPEG FRAME</text>
+        <rect x="598" y="126" width="84" height="16" rx="2" fill="#0b1530"/>
+        <text x="640" y="138" fill="#22d3ee" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FRAME 0x10</text>
+
+        <rect x="198" y="203" width="40" height="16" rx="2" fill="#0b1530"/>
+        <text x="202" y="215" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.08em">DRAW</text>
+
+        <rect x="314" y="246" width="92" height="16" rx="2" fill="#0b1530"/>
+        <text x="360" y="258" fill="#6ea8ff" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">KEY · MOUSE</text>
+        <rect x="594" y="246" width="92" height="16" rx="2" fill="#0b1530"/>
+        <text x="640" y="258" fill="#6ea8ff" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">0x20 – 0x24</text>
+
+        <rect x="318" y="366" width="84" height="16" rx="2" fill="#0b1530"/>
+        <text x="360" y="378" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TEXT</text>
+        <rect x="598" y="366" width="84" height="16" rx="2" fill="#0b1530"/>
+        <text x="640" y="378" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLIP 0x40</text>
+
+        <!-- Node: Frame decoder (viewer) -->
+        <rect x="70" y="120" width="240" height="64" rx="6" fill="#0b1530"/>
+        <rect x="70" y="120" width="240" height="64" rx="6" fill="#6ea8ff" stroke="#9fb3d9" stroke-width="1" fill-opacity="0.06" stroke-opacity="0.45"/>
+        <rect x="78" y="128" width="56" height="16" rx="2" fill="none" stroke="#9fb3d9" stroke-width="0.8" stroke-opacity="0.35"/>
+        <text x="106" y="140" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">READER</text>
+        <text x="190" y="160" fill="#e6eeff" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Frame decoder</text>
+        <text x="190" y="176" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">JPEG → backing RGBA</text>
+
+        <!-- Node: Window (viewer) -->
+        <rect x="70" y="240" width="240" height="64" rx="6" fill="#0b1530"/>
+        <rect x="70" y="240" width="240" height="64" rx="6" fill="#6ea8ff" stroke="#9fb3d9" stroke-width="1" fill-opacity="0.06" stroke-opacity="0.45"/>
+        <rect x="78" y="248" width="56" height="16" rx="2" fill="none" stroke="#9fb3d9" stroke-width="0.8" stroke-opacity="0.35"/>
+        <text x="106" y="260" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EBITEN</text>
+        <text x="190" y="280" fill="#e6eeff" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Viewer window</text>
+        <text x="190" y="296" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">Ctrl+Alt+Home toggles capture</text>
+
+        <!-- Node: Clipboard (viewer) -->
+        <rect x="70" y="360" width="240" height="64" rx="6" fill="#0b1530"/>
+        <rect x="70" y="360" width="240" height="64" rx="6" fill="#6ea8ff" stroke="#9fb3d9" stroke-width="1" fill-opacity="0.06" stroke-opacity="0.45"/>
+        <text x="190" y="388" fill="#e6eeff" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Clipboard sync</text>
+        <text x="190" y="404" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">poll 500 ms · text ≤ 256 KB</text>
+
+        <!-- Node: TCP session (focal) -->
+        <rect x="420" y="112" width="160" height="320" rx="6" fill="#0b1530"/>
+        <rect x="420" y="112" width="160" height="320" rx="6" fill="#22d3ee" stroke="#22d3ee" stroke-width="1" fill-opacity="0.07"/>
+        <rect x="428" y="120" width="34" height="16" rx="2" fill="none" stroke="#22d3ee" stroke-width="0.8" stroke-opacity="0.55"/>
+        <text x="445" y="132" fill="#22d3ee" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TCP</text>
+        <text x="500" y="204" fill="#e6eeff" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">One session</text>
+        <text x="500" y="220" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">port 7700 · one viewer</text>
+        <text x="500" y="320" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">PING every 2 s</text>
+        <text x="500" y="336" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">6 s read deadline</text>
+        <text x="500" y="352" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">≤ 16 MB per message</text>
+
+        <!-- Node: Capture loop (host) -->
+        <rect x="690" y="120" width="240" height="64" rx="6" fill="#0b1530"/>
+        <rect x="690" y="120" width="240" height="64" rx="6" fill="#6ea8ff" stroke="#9fb3d9" stroke-width="1" fill-opacity="0.06" stroke-opacity="0.45"/>
+        <rect x="698" y="128" width="42" height="16" rx="2" fill="none" stroke="#9fb3d9" stroke-width="0.8" stroke-opacity="0.35"/>
+        <text x="719" y="140" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TICK</text>
+        <text x="810" y="160" fill="#e6eeff" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Capture loop</text>
+        <text x="810" y="176" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">100 ms · JPEG q70 · skip if busy</text>
+
+        <!-- Node: Input injector (host) -->
+        <rect x="690" y="240" width="240" height="64" rx="6" fill="#0b1530"/>
+        <rect x="690" y="240" width="240" height="64" rx="6" fill="#6ea8ff" stroke="#9fb3d9" stroke-width="1" fill-opacity="0.06" stroke-opacity="0.45"/>
+        <rect x="698" y="248" width="48" height="16" rx="2" fill="none" stroke="#9fb3d9" stroke-width="0.8" stroke-opacity="0.35"/>
+        <text x="722" y="260" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">WIN32</text>
+        <text x="810" y="280" fill="#e6eeff" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Input injector</text>
+        <text x="810" y="296" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">SendInput · releases held keys</text>
+
+        <!-- Node: Clipboard (host) -->
+        <rect x="690" y="360" width="240" height="64" rx="6" fill="#0b1530"/>
+        <rect x="690" y="360" width="240" height="64" rx="6" fill="#6ea8ff" stroke="#9fb3d9" stroke-width="1" fill-opacity="0.06" stroke-opacity="0.45"/>
+        <text x="810" y="388" fill="#e6eeff" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Clipboard sync</text>
+        <text x="810" y="404" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">poll 500 ms · no echo back</text>
+
+        <!-- Legend strip -->
+        <line x1="40" y1="468" x2="960" y2="468" stroke="#9fb3d9" stroke-width="0.8" stroke-opacity="0.18"/>
+        <text x="40" y="496" fill="#9fb3d9" font-size="11" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+        <line x1="140" y1="492" x2="168" y2="492" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#architecture-arrow-accent)"/>
+        <text x="178" y="496" fill="#9fb3d9" font-size="11" font-family="'Geist', sans-serif">Screen frames (host → viewer)</text>
+        <line x1="440" y1="492" x2="468" y2="492" stroke="#6ea8ff" stroke-width="1.2" marker-end="url(#architecture-arrow-link)"/>
+        <text x="478" y="496" fill="#9fb3d9" font-size="11" font-family="'Geist', sans-serif">Input (viewer → host, only while captured)</text>
+        <line x1="140" y1="516" x2="168" y2="516" stroke="#9fb3d9" stroke-width="1" stroke-dasharray="5,4" marker-start="url(#architecture-arrow)" marker-end="url(#architecture-arrow)"/>
+        <text x="178" y="520" fill="#9fb3d9" font-size="11" font-family="'Geist', sans-serif">Clipboard text (both ways)</text>
+        <rect x="446" y="510" width="16" height="12" rx="2" fill="#22d3ee" stroke="#22d3ee" stroke-width="1" fill-opacity="0.07"/>
+        <text x="478" y="520" fill="#9fb3d9" font-size="11" font-family="'Geist', sans-serif">The single TCP connection</text>
+      </svg>

@@ -1,0 +1,38 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "all-caps-body",
+        "value": "*",
+        "files": [
+          "docs/diagrams/architecture.html"
+        ],
+        "createdAt": "2026-11-07T15:49:27.359Z",
+        "reason": "agent triage: short diagram labels only, diagram-design skill style"
+      },
+      {
+        "rule": "all-caps-body",
+        "value": "*",
+        "files": [
+          "docs/diagrams/session-sequence.html"
+        ],
+        "createdAt": "2026-11-07T15:49:27.617Z",
+        "reason": "agent triage: short diagram labels only, diagram-design skill style"
+      },
+      {
+        "rule": "overused-font",
+        "value": "geist mono",
+        "createdAt": "2026-11-07T15:49:27.868Z",
+        "reason": "agent triage: diagram-design skill default; GitHub SVG embeds fall back to system fonts"
+      },
+      {
+        "rule": "overused-font",
+        "value": "instrument serif",
+        "createdAt": "2026-11-07T15:49:28.119Z",
+        "reason": "agent triage: diagram-design skill default; GitHub SVG embeds fall back to system fonts"
+      }
+    ]
+  }
+}
