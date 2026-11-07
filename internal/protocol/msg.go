@@ -23,11 +23,9 @@ const (
 )
 
 const (
-	MaxLen             = 16 << 20
-	MaxClipboard       = 256 << 10
-	Version       byte = 1
-	ChannelScreen byte = 1
-	ChannelInput  byte = 2
+	MaxLen            = 16 << 20
+	MaxClipboard      = 256 << 10
+	Version      byte = 1
 )
 
 var (
@@ -43,8 +41,8 @@ type Msg interface {
 
 type Challenge struct{ Nonce [32]byte }
 type Hello struct {
-	Version, Channel byte
-	Hash             [32]byte
+	Version byte
+	Hash    [32]byte
 }
 type OK struct{ W, H uint16 }
 type Deny struct{}
@@ -84,7 +82,7 @@ func (Clipboard) Type() byte   { return TypeClipboard }
 var be = binary.BigEndian
 
 func (m Challenge) Marshal() []byte { return m.Nonce[:] }
-func (m Hello) Marshal() []byte     { return append([]byte{m.Version, m.Channel}, m.Hash[:]...) }
+func (m Hello) Marshal() []byte     { return append([]byte{m.Version}, m.Hash[:]...) }
 func (m OK) Marshal() []byte        { return be.AppendUint16(be.AppendUint16(nil, m.W), m.H) }
 func (Deny) Marshal() []byte        { return nil }
 func (m Frame) Marshal() []byte {

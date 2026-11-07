@@ -30,24 +30,26 @@ func run(args []string) int {
 		return 2
 	}
 	addr := net.JoinHostPort(*host, strconv.Itoa(*port))
-	screen, w, h, err := dial(addr, protocol.ChannelScreen, *pw)
+	c, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "rdview: screen channel:", err)
+		fmt.Fprintln(os.Stderr, "rdview:", err)
 		return 2
 	}
+	c.SetDeadline(time.Now().Add(10 * time.Second)) // a silent host must not hang startup
+	w, h, err := protocol.ClientHandshake(c, *pw)
+	if err != nil {
+		c.Close()
+		fmt.Fprintln(os.Stderr, "rdview:", err)
+		return 2
+	}
+	c.SetDeadline(time.Time{})
 	if w == 0 || h == 0 || w > 8192 || h > 8192 {
-		screen.Close()
+		c.Close()
 		fmt.Fprintln(os.Stderr, "rdview: unsupported screen size", w, "x", h)
 		return 2
 	}
-	input, _, _, err := dial(addr, protocol.ChannelInput, *pw)
-	if err != nil {
-		screen.Close()
-		fmt.Fprintln(os.Stderr, "rdview: input channel:", err)
-		return 2
-	}
-	g := newGame(screen, input, int(w), int(h))
-	defer g.fail() // closes both conns on any exit
+	g := newGame(c, int(w), int(h))
+	defer g.fail() // closes the conn on any exit
 	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle(titleCaptured)
@@ -60,19 +62,4 @@ func run(args []string) int {
 		return 1
 	}
 	return 0
-}
-
-func dial(addr string, ch byte, pw string) (net.Conn, uint16, uint16, error) {
-	c, err := net.DialTimeout("tcp", addr, 5*time.Second)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	c.SetDeadline(time.Now().Add(10 * time.Second)) // a silent host must not hang startup
-	w, h, err := protocol.ClientHandshake(c, ch, pw)
-	if err != nil {
-		c.Close()
-		return nil, 0, 0, err
-	}
-	c.SetDeadline(time.Time{})
-	return c, w, h, nil
 }

@@ -56,11 +56,11 @@ func unmarshal(t byte, p []byte) (Msg, error) {
 		copy(m.Nonce[:], p)
 		return m, nil
 	case TypeHello:
-		if err := need(34); err != nil {
+		if err := need(33); err != nil {
 			return nil, err
 		}
-		m := Hello{Version: p[0], Channel: p[1]}
-		copy(m.Hash[:], p[2:])
+		m := Hello{Version: p[0]}
+		copy(m.Hash[:], p[1:])
 		return m, nil
 	case TypeOK:
 		if err := need(4); err != nil {

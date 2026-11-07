@@ -69,32 +69,33 @@ func (l *Limiter) Reset(ip string) {
 	delete(l.m, ip)
 }
 
-// ServerHandshake authenticates a client. accept decides whether channel is acceptable now.
+// ServerHandshake authenticates a client. accept runs once the password is right and
+// decides whether a session may start now; it returns the screen size sent in OK.
 func ServerHandshake(c io.ReadWriter, ip, password string, lim *Limiter,
-	accept func(channel byte) (w, h uint16, ok bool)) (byte, error) {
+	accept func() (w, h uint16, ok bool)) error {
 	if lim.Blocked(ip) {
-		return 0, ErrDenied
+		return ErrDenied
 	}
 	var ch Challenge
 	if _, err := rand.Read(ch.Nonce[:]); err != nil {
-		return 0, err
+		return err
 	}
 	if err := Write(c, ch); err != nil {
-		return 0, err
+		return err
 	}
 	m, err := ReadMax(c, 64) // pre-auth: never allocate more than a Hello needs
 	if err != nil {
-		return 0, err
+		return err
 	}
 	hello, ok := m.(Hello)
 	if !ok {
-		return 0, ErrDenied
+		return ErrDenied
 	}
-	deny := func() (byte, error) {
+	deny := func() error {
 		if err := Write(c, Deny{}); err != nil {
-			return 0, err
+			return err
 		}
-		return 0, ErrDenied
+		return ErrDenied
 	}
 	if hello.Version != Version {
 		return deny()
@@ -107,19 +108,16 @@ func ServerHandshake(c io.ReadWriter, ip, password string, lim *Limiter,
 		lim.Fail(ip)
 		return deny()
 	}
-	w, h, ok := accept(hello.Channel)
+	w, h, ok := accept()
 	if !ok {
 		return deny()
 	}
 	lim.Reset(ip)
-	if err := Write(c, OK{W: w, H: h}); err != nil {
-		return 0, err
-	}
-	return hello.Channel, nil
+	return Write(c, OK{W: w, H: h})
 }
 
 // ClientHandshake answers the server's challenge and returns the screen size.
-func ClientHandshake(c io.ReadWriter, channel byte, password string) (w, h uint16, err error) {
+func ClientHandshake(c io.ReadWriter, password string) (w, h uint16, err error) {
 	m, err := ReadMax(c, 64)
 	if err != nil {
 		return 0, 0, err
@@ -128,7 +126,7 @@ func ClientHandshake(c io.ReadWriter, channel byte, password string) (w, h uint1
 	if !ok {
 		return 0, 0, ErrDenied
 	}
-	if err = Write(c, Hello{Version: Version, Channel: channel, Hash: HashPassword(password, ch.Nonce)}); err != nil {
+	if err = Write(c, Hello{Version: Version, Hash: HashPassword(password, ch.Nonce)}); err != nil {
 		return 0, 0, err
 	}
 	if m, err = ReadMax(c, 64); err != nil {

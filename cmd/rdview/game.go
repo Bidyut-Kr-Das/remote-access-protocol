@@ -25,8 +25,8 @@ const (
 )
 
 type game struct {
-	screen, input net.Conn
-	w, h          int
+	conn net.Conn
+	w, h int
 
 	mu      sync.Mutex // guards backing, dirty
 	backing *image.RGBA
@@ -37,8 +37,7 @@ type game struct {
 	closeOnce sync.Once
 	clipDone  chan struct{}
 	clip      *clipboard.Syncer
-	wmu       sync.Mutex // serializes input-conn writes; held while checking dead
-	lastPong  atomic.Int64
+	wmu       sync.Mutex // serializes conn writes; held while checking dead
 
 	// Update/Layout-only state (game loop goroutine).
 	captured     bool
@@ -50,86 +49,64 @@ type game struct {
 	disconnected bool
 }
 
-func newGame(screen, input net.Conn, w, h int) *game {
-	g := &game{screen: screen, input: input, w: w, h: h, captured: true, backing: image.NewRGBA(image.Rect(0, 0, w, h)),
+func newGame(conn net.Conn, w, h int) *game {
+	return &game{conn: conn, w: w, h: h, captured: true, backing: image.NewRGBA(image.Rect(0, 0, w, h)),
 		clipDone: make(chan struct{}), clip: clipboard.New()}
-	g.lastPong.Store(time.Now().UnixNano())
-	return g
 }
 
-// fail marks the session dead and closes both conns (idempotent).
+// fail marks the session dead and closes the conn (idempotent).
 func (g *game) fail() {
 	g.dead.Store(true)
 	g.closeOnce.Do(func() {
 		close(g.clipDone)
-		g.screen.Close()
-		g.input.Close()
+		g.conn.Close()
 	})
 }
 
-// send writes one message on the input conn; never writes after disconnect.
+// send writes one message; never writes after disconnect.
 func (g *game) send(m protocol.Msg) {
 	g.wmu.Lock()
 	defer g.wmu.Unlock()
 	if g.dead.Load() {
 		return
 	}
-	g.input.SetWriteDeadline(time.Now().Add(6 * time.Second))
-	if protocol.Write(g.input, m) != nil {
+	g.conn.SetWriteDeadline(time.Now().Add(6 * time.Second))
+	if protocol.Write(g.conn, m) != nil {
 		g.fail()
 	}
 }
 
 func (g *game) start() {
-	go func() { // frames
+	go func() { // reader
 		for {
-			m, err := protocol.Read(g.screen)
-			if err != nil {
-				g.fail()
-				return
-			}
-			f, ok := m.(protocol.Frame)
-			if !ok {
-				continue
-			}
-			img, err := jpeg.Decode(bytes.NewReader(f.Data))
-			if err != nil {
-				continue // one bad tile is not fatal
-			}
-			x, y := int(f.X), int(f.Y)
-			g.mu.Lock()
-			draw.Draw(g.backing, image.Rect(x, y, x+int(f.W), y+int(f.H)), img, image.Point{}, draw.Src)
-			g.dirty = true
-			g.mu.Unlock()
-		}
-	}()
-	go func() { // input reader
-		for {
-			m, err := protocol.Read(g.input)
+			g.conn.SetReadDeadline(time.Now().Add(6 * time.Second)) // host pongs our 2 s pings
+			m, err := protocol.Read(g.conn)
 			if err != nil {
 				g.fail()
 				return
 			}
 			switch m := m.(type) {
-			case protocol.Ping:
-				g.send(protocol.Pong{})
-			case protocol.Pong:
-				g.lastPong.Store(time.Now().UnixNano())
+			case protocol.Frame:
+				img, err := jpeg.Decode(bytes.NewReader(m.Data))
+				if err != nil {
+					continue // one bad tile is not fatal
+				}
+				x, y := int(m.X), int(m.Y)
+				g.mu.Lock()
+				draw.Draw(g.backing, image.Rect(x, y, x+int(m.W), y+int(m.H)), img, image.Point{}, draw.Src)
+				g.dirty = true
+				g.mu.Unlock()
 			case protocol.Clipboard:
 				g.clip.Apply(m.Text)
 			}
 		}
 	}()
 	go g.clip.Run(g.clipDone, func(text string) { g.send(protocol.Clipboard{Text: text}) })
-	go func() { // keepalive
+	go func() { // keepalive; the reader's deadline detects a dead host
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		for range t.C {
 			if g.dead.Load() {
-				return
-			}
-			if time.Since(time.Unix(0, g.lastPong.Load())) > 6*time.Second {
-				g.fail()
 				return
 			}
 			g.send(protocol.Ping{})

@@ -13,7 +13,7 @@ import (
 func TestRoundTripAll(t *testing.T) {
 	msgs := []Msg{
 		Challenge{Nonce: [32]byte{1, 2, 3, 31: 9}},
-		Hello{Version: 1, Channel: ChannelInput, Hash: [32]byte{7, 31: 8}},
+		Hello{Version: 1, Hash: [32]byte{7, 31: 8}},
 		OK{W: 1920, H: 1080},
 		Deny{},
 		Frame{X: 1, Y: 2, W: 3, H: 4, Codec: 1, Data: []byte{9, 8, 7}},

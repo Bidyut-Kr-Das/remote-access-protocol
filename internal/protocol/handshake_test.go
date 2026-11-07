@@ -8,15 +8,12 @@ import (
 
 const pw = "pässwörd✓"
 
-func okAccept(byte) (uint16, uint16, bool) { return 1920, 1080, true }
+func okAccept() (uint16, uint16, bool) { return 1920, 1080, true }
 
-func runServer(t *testing.T, c net.Conn, ip, password string, lim *Limiter, acc func(byte) (uint16, uint16, bool)) chan [2]any {
+func runServer(t *testing.T, c net.Conn, ip, password string, lim *Limiter, acc func() (uint16, uint16, bool)) chan error {
 	t.Helper()
-	ch := make(chan [2]any, 1)
-	go func() {
-		chn, err := ServerHandshake(c, ip, password, lim, acc)
-		ch <- [2]any{chn, err}
-	}()
+	ch := make(chan error, 1)
+	go func() { ch <- ServerHandshake(c, ip, password, lim, acc) }()
 	return ch
 }
 
@@ -29,13 +26,12 @@ func TestHandshakeOK(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 	res := runServer(t, s, "1.1.1.1", pw, newLim(), okAccept)
-	w, h, err := ClientHandshake(c, ChannelInput, pw)
+	w, h, err := ClientHandshake(c, pw)
 	if err != nil || w != 1920 || h != 1080 {
 		t.Fatalf("client: %d %d %v", w, h, err)
 	}
-	r := <-res
-	if r[0].(byte) != ChannelInput || r[1] != nil {
-		t.Fatalf("server: %v", r)
+	if err := <-res; err != nil {
+		t.Fatalf("server: %v", err)
 	}
 }
 
@@ -44,12 +40,12 @@ func TestHandshakeWrongPassword(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 	res := runServer(t, s, "1.1.1.1", pw, newLim(), okAccept)
-	_, _, err := ClientHandshake(c, ChannelScreen, "x")
+	_, _, err := ClientHandshake(c, "x")
 	if err != ErrDenied {
 		t.Fatalf("client err %v", err)
 	}
-	if r := <-res; r[1] != ErrDenied {
-		t.Fatalf("server err %v", r[1])
+	if err := <-res; err != ErrDenied {
+		t.Fatalf("server err %v", err)
 	}
 }
 
@@ -63,7 +59,7 @@ func TestHandshakeBadVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	ch := m.(Challenge)
-	if err := Write(c, Hello{Version: 2, Channel: ChannelScreen, Hash: HashPassword(pw, ch.Nonce)}); err != nil {
+	if err := Write(c, Hello{Version: 2, Hash: HashPassword(pw, ch.Nonce)}); err != nil {
 		t.Fatal(err)
 	}
 	m, err = Read(c)
@@ -73,8 +69,8 @@ func TestHandshakeBadVersion(t *testing.T) {
 	if _, ok := m.(Deny); !ok {
 		t.Fatalf("got %T", m)
 	}
-	if r := <-res; r[1] != ErrDenied {
-		t.Fatalf("server err %v", r[1])
+	if err := <-res; err != ErrDenied {
+		t.Fatalf("server err %v", err)
 	}
 }
 
@@ -82,12 +78,12 @@ func TestHandshakeAcceptRejects(t *testing.T) {
 	lim := newLim()
 	for i := 0; i < 3; i++ {
 		s, c := net.Pipe()
-		res := runServer(t, s, "1.1.1.1", pw, lim, func(byte) (uint16, uint16, bool) { return 0, 0, false })
-		if _, _, err := ClientHandshake(c, ChannelScreen, pw); err != ErrDenied {
+		res := runServer(t, s, "1.1.1.1", pw, lim, func() (uint16, uint16, bool) { return 0, 0, false })
+		if _, _, err := ClientHandshake(c, pw); err != ErrDenied {
 			t.Fatalf("client err %v", err)
 		}
-		if r := <-res; r[1] != ErrDenied {
-			t.Fatalf("server err %v", r[1])
+		if err := <-res; err != ErrDenied {
+			t.Fatalf("server err %v", err)
 		}
 		s.Close()
 		c.Close()
@@ -127,7 +123,7 @@ func TestHandshakeBlockedIP(t *testing.T) {
 	}
 	s, c := net.Pipe()
 	defer c.Close()
-	_, err := ServerHandshake(s, "1.1.1.1", pw, lim, okAccept)
+	err := ServerHandshake(s, "1.1.1.1", pw, lim, okAccept)
 	if err != ErrDenied {
 		t.Fatalf("err %v", err)
 	}
@@ -150,16 +146,16 @@ func attempt(t *testing.T, lim *Limiter, password string, badVer bool) error {
 			t.Fatal(err)
 		}
 		n := m.(Challenge).Nonce
-		if err := Write(c, Hello{Version: 2, Channel: ChannelScreen, Hash: HashPassword(pw, n)}); err != nil {
+		if err := Write(c, Hello{Version: 2, Hash: HashPassword(pw, n)}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := Read(c); err != nil {
 			t.Fatal(err)
 		}
 	} else {
-		ClientHandshake(c, ChannelScreen, password)
+		ClientHandshake(c, password)
 	}
-	return (<-res)[1].(error)
+	return <-res
 }
 
 func TestLockoutWrongPasswordCounts(t *testing.T) {
@@ -186,17 +182,9 @@ func TestLockoutResetOnSuccess(t *testing.T) {
 	lim := newLim()
 	attempt(t, lim, "x", false)
 	attempt(t, lim, "x", false)
-	// success returns nil error; attempt would panic on nil assertion, so run inline
-	s, c := net.Pipe()
-	res := runServer(t, s, "9.9.9.9", pw, lim, okAccept)
-	if _, _, err := ClientHandshake(c, ChannelScreen, pw); err != nil {
+	if err := attempt(t, lim, pw, false); err != nil {
 		t.Fatal(err)
 	}
-	if r := <-res; r[1] != nil {
-		t.Fatal(r[1])
-	}
-	s.Close()
-	c.Close()
 	attempt(t, lim, "x", false)
 	attempt(t, lim, "x", false)
 	if lim.Blocked("9.9.9.9") {
@@ -215,8 +203,8 @@ func TestHandshakeRejectsOversizeHeader(t *testing.T) {
 	if _, err := c.Write([]byte{0, 0x10, 0, 0}); err != nil { // len = 1 MiB, no body follows
 		t.Fatal(err)
 	}
-	if r := <-res; r[1] != ErrOversize {
-		t.Fatalf("server err %v", r[1])
+	if err := <-res; err != ErrOversize {
+		t.Fatalf("server err %v", err)
 	}
 }
 
@@ -233,7 +221,7 @@ func TestLockoutAppliesMidHandshake(t *testing.T) {
 	for i := 0; i < 3; i++ { // parallel attempts lock the IP after our Challenge
 		lim.Fail("1.1.1.1")
 	}
-	if err := Write(c, Hello{Version: Version, Channel: ChannelScreen, Hash: HashPassword(pw, m.(Challenge).Nonce)}); err != nil {
+	if err := Write(c, Hello{Version: Version, Hash: HashPassword(pw, m.(Challenge).Nonce)}); err != nil {
 		t.Fatal(err)
 	}
 	if m, err = Read(c); err != nil {
@@ -242,7 +230,7 @@ func TestLockoutAppliesMidHandshake(t *testing.T) {
 	if _, ok := m.(Deny); !ok {
 		t.Fatalf("got %T", m)
 	}
-	if r := <-res; r[1] != ErrDenied {
-		t.Fatalf("server err %v", r[1])
+	if err := <-res; err != ErrDenied {
+		t.Fatalf("server err %v", err)
 	}
 }

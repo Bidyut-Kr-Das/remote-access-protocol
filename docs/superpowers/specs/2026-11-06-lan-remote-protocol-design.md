@@ -21,12 +21,12 @@ Language: Go 1.22+. Both ends Windows.
 ## Topology
 
 - B runs `rdhost.exe`, listens on one TCP port (default 7700).
-- A runs `rdview.exe`, opens **two** TCP connections to B: screen channel and input channel.
+- A runs `rdview.exe`, opens one TCP connection to B.
 - One session at a time on B.
 
 ## Wire format
 
-Every message on both channels:
+Every message:
 
 ```
 [u32 BE len][u8 type][payload]
@@ -37,36 +37,35 @@ Every message on both channels:
 ### Handshake (identical on both sockets)
 
 1. B → A `CHALLENGE { [32]byte nonce }` immediately after accept. Nonce from `crypto/rand`, unique per socket.
-2. A → B `HELLO { u8 version=1, u8 channel, [32]byte hash }` where `channel` 1=screen, 2=input, `hash = SHA256(password_bytes || nonce)`.
+2. A → B `HELLO { u8 version=1, [32]byte hash }` where `hash = SHA256(password_bytes || nonce)`.
 3. B → A `OK { u16 screen_w, u16 screen_h }` or `DENY {}` then B closes.
 
 Rules on B:
 - Wrong hash → DENY. 3 DENY from same source IP → ignore that IP (close on accept) for 60 s.
-- Unknown version or channel → DENY.
-- HELLO while a session already has both channels → DENY.
-- Session starts when first channel passes handshake. If the second channel is not up within 5 s, B drops the session and closes.
-- Same channel number twice in one session → DENY.
+- Unknown version → DENY.
+- HELLO while a session is active → DENY.
+- B closes a connection that does not finish the handshake within 5 s.
 
 ### Message types
 
-| type | name         | dir  | channel | payload |
-|------|--------------|------|---------|---------|
-| 0x01 | CHALLENGE    | B→A  | both    | `[32]byte nonce` |
-| 0x02 | HELLO        | A→B  | both    | `u8 version, u8 channel, [32]byte hash` |
-| 0x03 | OK           | B→A  | both    | `u16 screen_w, u16 screen_h` |
-| 0x04 | DENY         | B→A  | both    | none |
-| 0x10 | FRAME        | B→A  | screen  | `u16 x, u16 y, u16 w, u16 h, u8 codec, bytes data` |
-| 0x20 | MOUSE_MOVE   | A→B  | input   | `u16 x, u16 y` (B screen pixels) |
-| 0x21 | MOUSE_BUTTON | A→B  | input   | `u8 button (1=L,2=R,3=M), u8 down (0/1)` |
-| 0x22 | MOUSE_WHEEL  | A→B  | input   | `i16 delta` (Windows units, +120 = one notch up) |
-| 0x23 | KEY          | A→B  | input   | `u16 vk (Windows virtual-key), u8 down (0/1)` |
-| 0x24 | RELEASE      | A→B  | input   | none |
-| 0x30 | PING         | both | input   | none |
-| 0x31 | PONG         | both | input   | none |
+| type | name         | dir  | payload |
+|------|--------------|------|---------|
+| 0x01 | CHALLENGE    | B→A  | `[32]byte nonce` |
+| 0x02 | HELLO        | A→B  | `u8 version, [32]byte hash` |
+| 0x03 | OK           | B→A  | `u16 screen_w, u16 screen_h` |
+| 0x04 | DENY         | B→A  | none |
+| 0x10 | FRAME        | B→A  | `u16 x, u16 y, u16 w, u16 h, u8 codec, bytes data` |
+| 0x20 | MOUSE_MOVE   | A→B  | `u16 x, u16 y` (B screen pixels) |
+| 0x21 | MOUSE_BUTTON | A→B  | `u8 button (1=L,2=R,3=M), u8 down (0/1)` |
+| 0x22 | MOUSE_WHEEL  | A→B  | `i16 delta` (Windows units, +120 = one notch up) |
+| 0x23 | KEY          | A→B  | `u16 vk (Windows virtual-key), u8 down (0/1)` |
+| 0x24 | RELEASE      | A→B  | none |
+| 0x30 | PING         | A→B  | none |
+| 0x31 | PONG         | B→A  | none |
 
 FRAME codec: `1` = JPEG. v1 always sends full-screen rect `(0,0,screen_w,screen_h)`. Receivers must honor `x,y,w,h` so dirty rects later need no change.
 
-Keepalive: each side sends PING on the input channel every 2 s and replies PONG. No PONG within 6 s → close both sockets.
+Keepalive: A sends PING every 2 s; B replies PONG. Either side reading nothing for 6 s → close.
 
 Unknown type → close socket.
 
@@ -74,11 +73,11 @@ Unknown type → close socket.
 
 CLI: `rdhost -port 7700 -password <pw>`. Console app, runs in the logged-in user session. Embedded manifest declares per-monitor DPI awareness so capture size equals physical pixels.
 
-Capture loop (screen channel):
+Capture loop:
 - Tick every 100 ms. `kbinani/screenshot` primary monitor → `image/jpeg` quality 70 → FRAME.
 - Write with a deadline; if the previous FRAME is still being written, skip this tick. Never queue frames.
 
-Input (input channel):
+Input:
 - Decode message → Win32 `SendInput` via `golang.org/x/sys/windows` + `syscall.NewLazyDLL("user32.dll")`.
 - MOUSE_MOVE: `MOUSEEVENTF_MOVE|MOUSEEVENTF_ABSOLUTE`, coords scaled to 0–65535 over the primary monitor size.
 - MOUSE_BUTTON / MOUSE_WHEEL: matching `MOUSEEVENTF_*` flags.
@@ -91,7 +90,7 @@ After a session ends B keeps listening.
 
 CLI: `rdview -host <ip> -port 7700 -password <pw>`.
 
-- Connects screen channel, then input channel, handshake on each.
+- Connects, handshakes.
 - Ebiten window, resizable. Draws the latest FRAME scaled to fit, aspect preserved, letterboxed. One `*ebiten.Image` replaced per frame; FRAME `x,y,w,h` is drawn into a persistent full-size backing image.
 - **Captured** (default after connect): every key down/up and every mouse event inside the window is forwarded to B. Window title: `rdview — CAPTURED (Ctrl+Alt+Home to release)`.
 - **Release hotkey: Ctrl+Alt+Home.** Toggles captured ↔ released. On release: send RELEASE, stop forwarding, title `rdview — RELEASED (focus window, Ctrl+Alt+Home to capture)`. The hotkey chord is never forwarded; the Ctrl/Alt presses that formed it are sent as "up" to B on release.
