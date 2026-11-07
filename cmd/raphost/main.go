@@ -1,4 +1,4 @@
-// Command rdhost is the host agent: it shares this screen and accepts input from one LAN client.
+// Command raphost is the host agent: it shares this screen and accepts input from one LAN client.
 package main
 
 import (
@@ -10,24 +10,24 @@ import (
 	"sync"
 	"time"
 
-	"rdp-go/internal/capture"
-	"rdp-go/internal/clipboard"
-	"rdp-go/internal/host"
-	"rdp-go/internal/input"
-	"rdp-go/internal/protocol"
+	"rap/internal/capture"
+	"rap/internal/clipboard"
+	"rap/internal/host"
+	"rap/internal/input"
+	"rap/internal/protocol"
 )
 
 func main() { os.Exit(run(os.Args[1:])) }
 
 func run(args []string) int {
-	fs := flag.NewFlagSet("rdhost", flag.ContinueOnError)
+	fs := flag.NewFlagSet("raphost", flag.ContinueOnError)
 	port := fs.Int("port", 7700, "TCP port to listen on")
 	pw := fs.String("password", "", "shared password (required)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *pw == "" {
-		fmt.Fprintln(os.Stderr, "rdhost: -password is required")
+		fmt.Fprintln(os.Stderr, "raphost: -password is required")
 		fs.Usage()
 		return 2
 	}

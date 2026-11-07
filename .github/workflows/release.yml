@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - run: go build -o raphost.exe ./cmd/raphost
+      - run: go build -o rapview.exe ./cmd/rapview
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git log -1 --pretty=%B > notes.txt
+          gh release create "$GITHUB_REF_NAME" raphost.exe rapview.exe --title "$GITHUB_REF_NAME" --notes-file notes.txt
+
+  # After a tag release, rewrite the README block between the release markers on the
+  # default branch. Pushes made with GITHUB_TOKEN never trigger workflows, and
+  # [skip ci] guards against that changing, so this cannot loop.
+  readme:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Update README release block
+        env:
+          TAG: ${{ github.ref_name }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          base="https://github.com/$GITHUB_REPOSITORY/releases"
+          export BLOCK="**Latest release: [\`$TAG\`]($base/tag/$TAG)** ($(date -u +%Y-%m-%d)) · [release notes]($base/tag/$TAG) · [raphost.exe]($base/download/$TAG/raphost.exe) · [rapview.exe]($base/download/$TAG/rapview.exe)"
+          perl -0pi -e 's/<!-- release:start -->.*?<!-- release:end -->/<!-- release:start -->\n$ENV{BLOCK}\n<!-- release:end -->/s' README.md
+          if git diff --quiet README.md; then echo "README unchanged"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "docs: README release block for $TAG [skip ci]"
+          git push origin "HEAD:$BRANCH"

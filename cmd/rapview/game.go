@@ -13,15 +13,15 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
-	"rdp-go/internal/clipboard"
-	"rdp-go/internal/protocol"
-	"rdp-go/internal/view"
+	"rap/internal/clipboard"
+	"rap/internal/protocol"
+	"rap/internal/view"
 )
 
 const (
-	titleCaptured     = "rdview — CAPTURED (Ctrl+Alt+Home to release)"
-	titleReleased     = "rdview — RELEASED (focus window, Ctrl+Alt+Home to capture)"
-	titleDisconnected = "rdview — Disconnected"
+	titleCaptured     = "rapview — CAPTURED (Ctrl+Alt+Home to release)"
+	titleReleased     = "rapview — RELEASED (focus window, Ctrl+Alt+Home to capture)"
+	titleDisconnected = "rapview — Disconnected"
 )
 
 type game struct {

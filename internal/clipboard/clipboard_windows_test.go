@@ -8,10 +8,10 @@ func TestRealClipboardRoundTrip(t *testing.T) {
 	prev, _ := get()
 	defer set(prev)
 	before := seq()
-	if err := set("rdp-go ✓"); err != nil {
+	if err := set("rap ✓"); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := get(); err != nil || got != "rdp-go ✓" {
+	if got, err := get(); err != nil || got != "rap ✓" {
 		t.Fatalf("got %q, %v", got, err)
 	}
 	if seq() == before {

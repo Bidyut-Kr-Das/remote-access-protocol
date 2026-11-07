@@ -1,10 +1,10 @@
-# LAN Remote Control Protocol v1 Implementation Plan
+# Remote Access Protocol (RAP) v1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Two Windows Go binaries, `rdhost` (B) and `rdview` (A), so A sees B's screen and drives B's keyboard/mouse over LAN, with Ctrl+Alt+Home handing input back to A.
+**Goal:** Two Windows Go binaries, `raphost` (B) and `rapview` (A), so A sees B's screen and drives B's keyboard/mouse over LAN, with Ctrl+Alt+Home handing input back to A.
 
-**Architecture:** `internal/protocol` owns framing, messages and the challenge-hash handshake, pure Go, fully unit-tested. `internal/input` wraps Win32 `SendInput` behind a func var and tracks held keys. `internal/capture` turns a screenshot into a JPEG FRAME. `cmd/rdhost` accepts two TCP channels per session; `cmd/rdview` is an Ebiten window that forwards input while "captured".
+**Architecture:** `internal/protocol` owns framing, messages and the challenge-hash handshake, pure Go, fully unit-tested. `internal/input` wraps Win32 `SendInput` behind a func var and tracks held keys. `internal/capture` turns a screenshot into a JPEG FRAME. `cmd/raphost` accepts two TCP channels per session; `cmd/rapview` is an Ebiten window that forwards input while "captured".
 
 **Tech Stack:** Go 1.22+, `github.com/kbinani/screenshot`, `github.com/hajimehoshi/ebiten/v2`, `golang.org/x/sys/windows`, stdlib `encoding/binary`, `crypto/sha256`, `image/jpeg`.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Go 1.22+. Module path `rdp-go`.
+- Go 1.22+. Module path `rap`.
 - Dependencies limited to: `github.com/kbinani/screenshot`, `github.com/hajimehoshi/ebiten/v2`, `golang.org/x/sys`.
 - Wire: `[u32 BE len][u8 type][payload]`, `len = 1 + len(payload)`, max len 16 MiB (16777216). All integers big-endian.
 - Message type bytes exactly as the spec table (0x01–0x04, 0x10, 0x20–0x24, 0x30, 0x31).
@@ -72,7 +72,7 @@
   // unknown type → ErrUnknownType; short payload for type → io.ErrUnexpectedEOF
   ```
 
-- [ ] **Step 1: `go mod init rdp-go`** (Go 1.22 line in go.mod).
+- [ ] **Step 1: `go mod init rap`** (Go 1.22 line in go.mod).
 
 - [ ] **Step 2: Write failing tests** in `frame_test.go`:
   - `TestRoundTripAll`: table with one instance of every message type with non-zero fields (Frame with 3-byte Data, MouseWheel{-120}, Key{VK:0x41,Down:1}); `Write` to `bytes.Buffer`, `Read` back, `reflect.DeepEqual`.
@@ -252,11 +252,11 @@
 
 ---
 
-### Task 6: `rdhost` binary
+### Task 6: `raphost` binary
 
 **Files:**
-- Create: `cmd/rdhost/main.go`, `cmd/rdhost/dpi_windows.go`
-- Test: `cmd/rdhost/main_test.go`
+- Create: `cmd/raphost/main.go`, `cmd/raphost/dpi_windows.go`
+- Test: `cmd/raphost/main_test.go`
 
 **Interfaces:**
 - Consumes: Tasks 2–5.
@@ -279,9 +279,9 @@ Behavior:
 
 - [ ] **Step 3: Implement.** Log one line per session start/end with remote IP.
 
-- [ ] **Step 4: `go test ./cmd/rdhost/ && go build ./cmd/rdhost`** → PASS, builds.
+- [ ] **Step 4: `go test ./cmd/raphost/ && go build ./cmd/raphost`** → PASS, builds.
 
-- [ ] **Step 5: Commit** `feat(rdhost): host agent binary`.
+- [ ] **Step 5: Commit** `feat(raphost): host agent binary`.
 
 ---
 
@@ -321,10 +321,10 @@ Behavior:
 
 ---
 
-### Task 8: `rdview` binary
+### Task 8: `rapview` binary
 
 **Files:**
-- Create: `cmd/rdview/main.go`, `cmd/rdview/game.go`
+- Create: `cmd/rapview/main.go`, `cmd/rapview/game.go`
 
 **Interfaces:**
 - Consumes: Task 1 messages, Task 2 `ClientHandshake`, Task 7.
@@ -335,17 +335,17 @@ Behavior:
 - Frame goroutine: `protocol.Read(screen)` loop; Frame → `jpeg.Decode` → under mutex `draw.Draw` into persistent `*image.RGBA` backing (W×H from OK) at `(X,Y)`; `dirty=true`. Error → `disconnected=true`.
 - Input reader goroutine: Ping → Write Pong; Pong → `lastPong`. Keepalive goroutine: Ping every 2 s; `lastPong` older than 6 s → disconnected.
 - `Update()`:
-  - If disconnected: title `rdview — Disconnected`; after 2 s return `ebiten.Termination`; `run` returns 1.
-  - Hotkey: `IsKeyPressed(KeyControl) && IsKeyPressed(KeyAlt) && inpututil.IsKeyJustPressed(KeyHome)` → toggle `captured`. On capture→release: send Key up for 0xA2, 0xA4, then Release. Titles exactly: `rdview — CAPTURED (Ctrl+Alt+Home to release)` / `rdview — RELEASED (focus window, Ctrl+Alt+Home to capture)`.
+  - If disconnected: title `rapview — Disconnected`; after 2 s return `ebiten.Termination`; `run` returns 1.
+  - Hotkey: `IsKeyPressed(KeyControl) && IsKeyPressed(KeyAlt) && inpututil.IsKeyJustPressed(KeyHome)` → toggle `captured`. On capture→release: send Key up for 0xA2, 0xA4, then Release. Titles exactly: `rapview — CAPTURED (Ctrl+Alt+Home to release)` / `rapview — RELEASED (focus window, Ctrl+Alt+Home to capture)`.
   - If captured: `inpututil.AppendJustPressedKeys` → Key down; `AppendJustReleasedKeys` → Key up; skip KeyHome while Ctrl+Alt held; skip unmapped. Mouse: `MapCursor(ebiten.CursorPosition(), W, H, ww, wh)`; if ok, changed, and ≥ 8 ms since last → MouseMove. Buttons Left/Right/Middle just-pressed/released → MouseButton{1/2/3, 1/0}. `ebiten.Wheel()` y≠0 → MouseWheel{int16(y*120)}.
   - Any write error → disconnected, close both conns.
 - `Draw()`: if dirty, replace `*ebiten.Image` with `ebiten.NewImageFromImage(backing)`; draw with `Fit` scale/offset. `Layout(ow, oh)` returns `(ow, oh)`; `ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)`.
 
 - [ ] **Step 1: Implement `main.go` + `game.go`.** No unit test (Ebiten loop); testable logic lives in Task 7.
 
-- [ ] **Step 2: `go vet ./... && go build ./cmd/rdview`** → builds clean.
+- [ ] **Step 2: `go vet ./... && go build ./cmd/rapview`** → builds clean.
 
-- [ ] **Step 3: Commit** `feat(rdview): viewer binary with capture toggle`.
+- [ ] **Step 3: Commit** `feat(rapview): viewer binary with capture toggle`.
 
 ---
 
@@ -354,18 +354,18 @@ Behavior:
 **Files:**
 - Create: `README.md` (build, two run commands, hotkey, known limits = spec non-goals, acceptance results).
 
-- [ ] **Step 1: Build** `go build -o rdhost.exe ./cmd/rdhost; go build -o rdview.exe ./cmd/rdview`.
+- [ ] **Step 1: Build** `go build -o raphost.exe ./cmd/raphost; go build -o rapview.exe ./cmd/rapview`.
 
-- [ ] **Step 2: On B:** `rdhost -password test123`. Allow in Windows Firewall when prompted.
+- [ ] **Step 2: On B:** `raphost -password test123`. Allow in Windows Firewall when prompted.
 
-- [ ] **Step 3: On A:** `rdview -host <B ip> -password test123`. Expect B's desktop, title CAPTURED.
+- [ ] **Step 3: On A:** `rapview -host <B ip> -password test123`. Expect B's desktop, title CAPTURED.
 
 - [ ] **Step 4: Checks** (record pass/fail in README):
   1. Open Notepad on B via A's mouse; type `hello` → appears on B.
   2. Ctrl+Alt+Home; type → lands on A, not B; title RELEASED.
   3. Ctrl+Alt+Home again; type → lands on B.
-  4. Hold `a` on A, kill rdview → B stops repeating `a` within 1 s.
+  4. Hold `a` on A, kill rapview → B stops repeating `a` within 1 s.
   5. Wrong password ×3 → right password refused for 60 s, then works.
-  6. Resize rdview window → aspect kept, clicks land where pointed.
+  6. Resize rapview window → aspect kept, clicks land where pointed.
 
 - [ ] **Step 5: Commit** `docs: README and acceptance results`.
