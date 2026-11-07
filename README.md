@@ -39,12 +39,16 @@ Ctrl+Alt+Home toggles capture mode (shown in the window title); the chord itself
 - CAPTURED: keyboard and mouse on A go to B.
 - RELEASED: input stays on A; B is view-only.
 
+## Clipboard
+
+Text copied on either PC appears on the other within about half a second, in both capture modes. Text only (no images or files), up to 256 KB. It crosses the LAN in plaintext like everything else.
+
 ## Known limits (v1 non-goals)
 
 - Internet / NAT traversal / relay.
 - TLS. Password is challenge-hashed; frame data is plaintext on LAN.
 - Login screen, UAC prompts, session 0 capture.
-- Clipboard, audio, file transfer, multi-monitor.
+- Clipboard images/files, audio, file transfer, multi-monitor.
 - Auto-reconnect.
 - Forwarding Win key, Alt+Tab, Ctrl+Alt+Del from A (OS keeps them).
 - Input into windows running as administrator is blocked by Windows (UIPI) unless rdhost itself runs elevated.
@@ -59,3 +63,4 @@ Start `.\rdhost.exe -password test123` on B, `.\rdview.exe -host <B ip> -passwor
 - [ ] 4. Hold `a` on A, kill rdview → B stops repeating `a` within 1 s.
 - [ ] 5. Wrong password ×3 → right password refused for 60 s, then works.
 - [ ] 6. Resize rdview window → aspect kept, clicks land where pointed.
+- [ ] 7. Copy text on A, paste on B; copy on B, paste on A → both arrive; no ping-pong re-copies.

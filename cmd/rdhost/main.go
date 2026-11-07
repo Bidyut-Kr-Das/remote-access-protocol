@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"rdp-go/internal/capture"
+	"rdp-go/internal/clipboard"
 	"rdp-go/internal/host"
 	"rdp-go/internal/input"
 	"rdp-go/internal/protocol"
@@ -67,7 +68,7 @@ func serve(sess *host.Session, w, h uint16) {
 	var lastPong atomic.Int64
 	lastPong.Store(time.Now().UnixNano())
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	frames := make(chan protocol.Frame, 1)
 
 	go func() { // screen sender: the only writer on Screen, so frames never interleave
@@ -108,6 +109,15 @@ func serve(sess *host.Session, w, h uint16) {
 		}
 	}()
 
+	clip := clipboard.New()
+	go func() { // clipboard: each protocol.Write is one conn write, so it may share Input with ping/pong
+		defer wg.Done()
+		clip.Run(done, func(text string) {
+			sess.Input.SetWriteDeadline(time.Now().Add(6 * time.Second))
+			protocol.Write(sess.Input, protocol.Clipboard{Text: text})
+		})
+	}()
+
 	go func() { // input reader; sole owner of inj (Injector is not goroutine-safe)
 		defer wg.Done()
 		inj := input.NewInjector(w, h)
@@ -118,11 +128,13 @@ func serve(sess *host.Session, w, h uint16) {
 				stop()
 				return
 			}
-			switch m.(type) {
+			switch m := m.(type) {
 			case protocol.Ping:
 				protocol.Write(sess.Input, protocol.Pong{})
 			case protocol.Pong:
 				lastPong.Store(time.Now().UnixNano())
+			case protocol.Clipboard:
+				clip.Apply(m.Text)
 			default:
 				inj.Apply(m)
 			}

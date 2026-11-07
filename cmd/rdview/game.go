@@ -13,6 +13,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
+	"rdp-go/internal/clipboard"
 	"rdp-go/internal/protocol"
 	"rdp-go/internal/view"
 )
@@ -34,6 +35,8 @@ type game struct {
 
 	dead      atomic.Bool
 	closeOnce sync.Once
+	clipDone  chan struct{}
+	clip      *clipboard.Syncer
 	wmu       sync.Mutex // serializes input-conn writes; held while checking dead
 	lastPong  atomic.Int64
 
@@ -48,7 +51,8 @@ type game struct {
 }
 
 func newGame(screen, input net.Conn, w, h int) *game {
-	g := &game{screen: screen, input: input, w: w, h: h, captured: true, backing: image.NewRGBA(image.Rect(0, 0, w, h))}
+	g := &game{screen: screen, input: input, w: w, h: h, captured: true, backing: image.NewRGBA(image.Rect(0, 0, w, h)),
+		clipDone: make(chan struct{}), clip: clipboard.New()}
 	g.lastPong.Store(time.Now().UnixNano())
 	return g
 }
@@ -57,6 +61,7 @@ func newGame(screen, input net.Conn, w, h int) *game {
 func (g *game) fail() {
 	g.dead.Store(true)
 	g.closeOnce.Do(func() {
+		close(g.clipDone)
 		g.screen.Close()
 		g.input.Close()
 	})
@@ -105,14 +110,17 @@ func (g *game) start() {
 				g.fail()
 				return
 			}
-			switch m.(type) {
+			switch m := m.(type) {
 			case protocol.Ping:
 				g.send(protocol.Pong{})
 			case protocol.Pong:
 				g.lastPong.Store(time.Now().UnixNano())
+			case protocol.Clipboard:
+				g.clip.Apply(m.Text)
 			}
 		}
 	}()
+	go g.clip.Run(g.clipDone, func(text string) { g.send(protocol.Clipboard{Text: text}) })
 	go func() { // keepalive
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
