@@ -24,6 +24,7 @@ func TestRoundTripAll(t *testing.T) {
 		Release{},
 		Ping{},
 		Pong{},
+		Clipboard{Text: "héllo\n"},
 	}
 	for _, m := range msgs {
 		var b bytes.Buffer
@@ -107,5 +108,15 @@ func TestReadMaxRejects(t *testing.T) {
 	}
 	if cr.n != 4 {
 		t.Fatalf("consumed %d bytes, want 4", cr.n)
+	}
+}
+
+func TestRejectOversizeClipboard(t *testing.T) {
+	var b bytes.Buffer
+	if err := Write(&b, Clipboard{Text: string(make([]byte, MaxClipboard+1))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Read(&b); !errors.Is(err, ErrOversize) {
+		t.Fatalf("got %v", err)
 	}
 }

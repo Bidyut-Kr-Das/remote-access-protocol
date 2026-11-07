@@ -19,10 +19,12 @@ const (
 	TypeRelease     byte = 0x24
 	TypePing        byte = 0x30
 	TypePong        byte = 0x31
+	TypeClipboard   byte = 0x40
 )
 
 const (
 	MaxLen             = 16 << 20
+	MaxClipboard       = 256 << 10
 	Version       byte = 1
 	ChannelScreen byte = 1
 	ChannelInput  byte = 2
@@ -62,6 +64,9 @@ type Release struct{}
 type Ping struct{}
 type Pong struct{}
 
+// Clipboard carries UTF-8 text; either side sends it when its local clipboard changes.
+type Clipboard struct{ Text string }
+
 func (Challenge) Type() byte   { return TypeChallenge }
 func (Hello) Type() byte       { return TypeHello }
 func (OK) Type() byte          { return TypeOK }
@@ -74,6 +79,7 @@ func (Key) Type() byte         { return TypeKey }
 func (Release) Type() byte     { return TypeRelease }
 func (Ping) Type() byte        { return TypePing }
 func (Pong) Type() byte        { return TypePong }
+func (Clipboard) Type() byte   { return TypeClipboard }
 
 var be = binary.BigEndian
 
@@ -96,3 +102,4 @@ func (m Key) Marshal() []byte         { return append(be.AppendUint16(nil, m.VK)
 func (Release) Marshal() []byte       { return nil }
 func (Ping) Marshal() []byte          { return nil }
 func (Pong) Marshal() []byte          { return nil }
+func (m Clipboard) Marshal() []byte   { return []byte(m.Text) }
