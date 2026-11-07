@@ -70,8 +70,8 @@ Diagram sources (editable HTML) live in [`docs/diagrams/`](docs/diagrams/).
 ### Requirements
 
 - Windows on both PCs.
-- Both PCs on the same LAN, or both on the same Tailscale/ZeroTier network (see [Internet use](#internet-use-via-tailscale-or-zerotier)).
-- Go 1.26+ only if you build from source.
+- Both PCs on the same LAN, or both on the same Tailscale/ZeroTier network (see [Internet use](#internet-use-built-in-tailscale)).
+- Go 1.27+ only if you build from source.
 
 ### 1. Start the host on PC B
 
@@ -134,9 +134,18 @@ Push a tag that starts with `v` (for example `git tag v1.0.0 && git push origin 
 2. publishes a GitHub release named after the tag with `raphost.exe` and `rapview.exe` attached (the tagged commit's message becomes the release notes),
 3. rewrites the [Download](#download) block in this README on the default branch with the new tag, date, release-notes link and direct download links.
 
-## Internet use (via Tailscale or ZeroTier)
+## Internet use (built-in Tailscale)
 
-There is no built-in relay or NAT traversal. Instead, put both PCs on one overlay network and use the overlay IP:
+Both binaries embed Tailscale ([tsnet](https://pkg.go.dev/tailscale.com/tsnet)), so nothing else needs installing. You need a free Tailscale account.
+
+1. On B, run `raphost -password <pw> -tsnet`. The first run prints a login URL; open it and sign in. B joins your tailnet as `rap-<computer name>` (printed on startup).
+2. On A, run `rapview -host rap-<B's computer name> -password <pw> -tsnet`. The first run prints a login URL; sign in with the **same** Tailscale account.
+
+Login state is saved in a `tsnet-*` folder under `%AppData%`, so later runs connect directly. Delete that folder to sign out. No firewall rule is needed: the embedded node only makes outbound connections. Traffic is WireGuard-encrypted end to end; Tailscale's relays (DERP) carry it when a direct path cannot be punched.
+
+## Internet use (via a separate Tailscale or ZeroTier install)
+
+Without `-tsnet`, put both PCs on one overlay network and use the overlay IP:
 
 1. Install Tailscale (or ZeroTier) on A and B and sign both into the same network.
 2. On B, run `raphost` as above. When Windows Firewall prompts, allow it on **both Private and Public** networks: the overlay adapter is often classified as Public, and a Private-only rule silently drops the connection.
@@ -204,7 +213,7 @@ docs/
 
 ## Known limits (v1 non-goals)
 
-- Built-in NAT traversal / relay. Internet use needs an overlay network (see above).
+- Own NAT traversal / relay: internet use goes through Tailscale (`-tsnet`) or another overlay.
 - TLS. The password is challenge-hashed; frame data is plaintext on the wire (safe inside an overlay tunnel, not on an open internet port).
 - Login screen, UAC prompts, session 0 capture.
 - Clipboard images/files, audio, file transfer, multi-monitor.

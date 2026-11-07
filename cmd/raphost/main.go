@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -15,6 +16,8 @@ import (
 	"rap/internal/host"
 	"rap/internal/input"
 	"rap/internal/protocol"
+
+	"tailscale.com/tsnet"
 )
 
 func main() { os.Exit(run(os.Args[1:])) }
@@ -23,6 +26,7 @@ func run(args []string) int {
 	fs := flag.NewFlagSet("raphost", flag.ContinueOnError)
 	port := fs.Int("port", 7700, "TCP port to listen on")
 	pw := fs.String("password", "", "shared password (required)")
+	ts := fs.Bool("tsnet", false, "listen on your tailnet via embedded Tailscale instead of the LAN")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -37,7 +41,12 @@ func run(args []string) int {
 		return 1
 	}
 	mgr := host.NewManager(*pw, w, h, protocol.NewLimiter(3, 60*time.Second, time.Now), 5*time.Second)
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	var ln net.Listener
+	if *ts {
+		ln, err = tailnetListen(*port)
+	} else {
+		ln, err = net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	}
 	if err != nil {
 		log.Print(err)
 		return 1
@@ -56,6 +65,20 @@ func run(args []string) int {
 			}
 		}()
 	}
+}
+
+// tailnetListen joins the user's tailnet as "rap-<computer name>" (first run
+// prints a login URL) and listens there. Node state persists in the user
+// config dir, so later runs connect without logging in again.
+func tailnetListen(port int) (net.Listener, error) {
+	name, _ := os.Hostname()
+	s := &tsnet.Server{Hostname: "rap-" + name, Logf: func(string, ...any) {}}
+	st, err := s.Up(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("on tailnet as %s (%v)", st.Self.DNSName, st.TailscaleIPs)
+	return s.Listen("tcp", fmt.Sprintf(":%d", port))
 }
 
 // serve runs one session on c. Each protocol.Write is one conn write, so the
