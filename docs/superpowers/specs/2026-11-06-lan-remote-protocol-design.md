@@ -1,11 +1,11 @@
-# LAN Remote Control Protocol — Design (v1)
+# Remote Access Protocol (RAP) — Design (v1)
 
 Date: 2026-11-06
 Status: approved
 
 ## Goal
 
-Own remote-control protocol, RDP-like, for Windows machines where RDP host is unavailable (Home edition) and AnyDesk-class tools are unreliable. v1 scope: computer A views computer B's screen and drives B's keyboard and mouse over the same LAN, and A can hand keyboard/mouse back to itself with a hotkey. Over-internet transport, dirty-rect encoding and Windows-account auth are later versions and must not require wire changes to the messages defined here.
+Own remote-control protocol for Windows machines where the built-in Windows remote desktop host is unavailable (Home edition) and AnyDesk-class tools are unreliable. v1 scope: computer A views computer B's screen and drives B's keyboard and mouse over the same LAN, and A can hand keyboard/mouse back to itself with a hotkey. Over-internet transport, dirty-rect encoding and Windows-account auth are later versions and must not require wire changes to the messages defined here.
 
 Language: Go 1.22+. Both ends Windows.
 
@@ -20,8 +20,8 @@ Language: Go 1.22+. Both ends Windows.
 
 ## Topology
 
-- B runs `rdhost.exe`, listens on one TCP port (default 7700).
-- A runs `rdview.exe`, opens one TCP connection to B.
+- B runs `raphost.exe`, listens on one TCP port (default 7700).
+- A runs `rapview.exe`, opens one TCP connection to B.
 - One session at a time on B.
 
 ## Wire format
@@ -69,9 +69,9 @@ Keepalive: A sends PING every 2 s; B replies PONG. Either side reading nothing f
 
 Unknown type → close socket.
 
-## Host agent: `rdhost.exe` (computer B)
+## Host agent: `raphost.exe` (computer B)
 
-CLI: `rdhost -port 7700 -password <pw>`. Console app, runs in the logged-in user session. Embedded manifest declares per-monitor DPI awareness so capture size equals physical pixels.
+CLI: `raphost -port 7700 -password <pw>`. Console app, runs in the logged-in user session. Embedded manifest declares per-monitor DPI awareness so capture size equals physical pixels.
 
 Capture loop:
 - Tick every 100 ms. `kbinani/screenshot` primary monitor → `image/jpeg` quality 70 → FRAME.
@@ -86,14 +86,14 @@ Input:
 
 After a session ends B keeps listening.
 
-## Viewer: `rdview.exe` (computer A)
+## Viewer: `rapview.exe` (computer A)
 
-CLI: `rdview -host <ip> -port 7700 -password <pw>`.
+CLI: `rapview -host <ip> -port 7700 -password <pw>`.
 
 - Connects, handshakes.
 - Ebiten window, resizable. Draws the latest FRAME scaled to fit, aspect preserved, letterboxed. One `*ebiten.Image` replaced per frame; FRAME `x,y,w,h` is drawn into a persistent full-size backing image.
-- **Captured** (default after connect): every key down/up and every mouse event inside the window is forwarded to B. Window title: `rdview — CAPTURED (Ctrl+Alt+Home to release)`.
-- **Release hotkey: Ctrl+Alt+Home.** Toggles captured ↔ released. On release: send RELEASE, stop forwarding, title `rdview — RELEASED (focus window, Ctrl+Alt+Home to capture)`. The hotkey chord is never forwarded; the Ctrl/Alt presses that formed it are sent as "up" to B on release.
+- **Captured** (default after connect): every key down/up and every mouse event inside the window is forwarded to B. Window title: `rapview — CAPTURED (Ctrl+Alt+Home to release)`.
+- **Release hotkey: Ctrl+Alt+Home.** Toggles captured ↔ released. On release: send RELEASE, stop forwarding, title `rapview — RELEASED (focus window, Ctrl+Alt+Home to capture)`. The hotkey chord is never forwarded; the Ctrl/Alt presses that formed it are sent as "up" to B on release.
 - Mouse: window cursor → letterboxed image coords → B pixels. Send MOUSE_MOVE only when the pixel changes, max 125 per second.
 - Keys: Ebiten key → Windows VK via a fixed table in `internal/input/vk.go`. Unmapped keys are dropped.
 
@@ -106,10 +106,10 @@ CLI: `rdview -host <ip> -port 7700 -password <pw>`.
 ## Repo layout
 
 ```
-D:\rdp-go\
+D:\rap\
   go.mod
-  cmd/rdhost/main.go
-  cmd/rdview/main.go
+  cmd/raphost/main.go
+  cmd/rapview/main.go
   internal/protocol/   # message types, encode/decode, handshake  (pure, testable)
   internal/capture/    # screenshot → JPEG
   internal/input/      # SendInput, VK table, held-state tracking
@@ -123,7 +123,7 @@ Dependencies: `github.com/kbinani/screenshot`, `github.com/hajimehoshi/ebiten/v2
 - `internal/protocol`: round-trip encode/decode for every message; reject bad len (0, >16 MiB), bad version, unknown type.
 - Handshake over `net.Pipe`: correct password → OK; wrong → DENY; 3 wrong from one IP → further connects closed within the 60 s window.
 - `internal/input`: `SendInput` behind a func var; press 3 keys + 1 button, call Release → exactly 4 "up" events, held maps empty.
-- Manual LAN acceptance: two PCs; type in Notepad on B from A; Ctrl+Alt+Home; typing now lands on A; Ctrl+Alt+Home again resumes B; kill `rdview` mid-keypress → no stuck key on B.
+- Manual LAN acceptance: two PCs; type in Notepad on B from A; Ctrl+Alt+Home; typing now lands on A; Ctrl+Alt+Home again resumes B; kill `rapview` mid-keypress → no stuck key on B.
 
 ## Later (not in v1, wire already allows)
 

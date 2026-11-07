@@ -1,4 +1,4 @@
-module rdp-go
+module rap
 
 go 1.26.0
 

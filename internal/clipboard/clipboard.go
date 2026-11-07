@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"rdp-go/internal/protocol"
+	"rap/internal/protocol"
 )
 
 // Syncer polls the local clipboard and reports changes; Apply sets it from the peer

@@ -9,7 +9,7 @@ import (
 
 	"github.com/kbinani/screenshot"
 
-	"rdp-go/internal/protocol"
+	"rap/internal/protocol"
 )
 
 // dims converts bounds to wire dimensions, rejecting empty or >65535 sizes.

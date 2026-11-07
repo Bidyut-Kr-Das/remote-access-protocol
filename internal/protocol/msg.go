@@ -1,4 +1,4 @@
-// Package protocol implements the rdhost/rdview wire framing and messages.
+// Package protocol implements the raphost/rapview wire framing and messages.
 package protocol
 
 import (

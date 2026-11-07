@@ -1,7 +1,7 @@
 // Package input injects remote mouse/key messages and tracks held state.
 package input
 
-import "rdp-go/internal/protocol"
+import "rap/internal/protocol"
 
 const (
 	MouseMoveF  = 0x0001

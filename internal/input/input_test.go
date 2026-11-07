@@ -3,7 +3,7 @@ package input
 import (
 	"testing"
 
-	"rdp-go/internal/protocol"
+	"rap/internal/protocol"
 )
 
 func rec(t *testing.T) *[]Event {

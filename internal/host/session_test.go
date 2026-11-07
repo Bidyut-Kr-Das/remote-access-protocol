@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"rdp-go/internal/protocol"
+	"rap/internal/protocol"
 )
 
 const pw = "secret"

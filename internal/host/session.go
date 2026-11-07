@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"rdp-go/internal/protocol"
+	"rap/internal/protocol"
 )
 
 type Manager struct {
