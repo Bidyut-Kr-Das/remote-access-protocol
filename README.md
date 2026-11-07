@@ -1,10 +1,10 @@
 # rdp-go
 
-LAN remote control for Windows over a custom wire protocol (v1). `rdhost` runs on computer B (the one being controlled); `rdview` runs on computer A (the one you sit at). Wire format: `docs/superpowers/specs/2026-11-06-lan-remote-protocol-design.md`.
+Remote control for Windows over a custom wire protocol (v1). `rdhost` runs on computer B (the one being controlled); `rdview` runs on computer A (the one you sit at). Works on a LAN directly, or over the internet through a Tailscale/ZeroTier overlay. Wire format: `docs/superpowers/specs/2026-11-06-lan-remote-protocol-design.md`.
 
 ## Requirements
 
-- Windows on both machines, same LAN.
+- Windows on both machines, same LAN or both on the same Tailscale/ZeroTier network.
 - Go 1.26+ to build.
 
 ## Build
@@ -32,6 +32,16 @@ On A:
 
 `-port` defaults to 7700.
 
+## Internet (via Tailscale or ZeroTier)
+
+There is no built-in relay or NAT traversal. Instead, put both PCs on one overlay network and use the overlay IP:
+
+1. Install Tailscale (or ZeroTier) on A and B and sign both into the same network.
+2. On B, run `rdhost` as above. When Windows Firewall prompts, allow it on **both Private and Public** networks: the overlay adapter is often classified as Public, and a Private-only rule silently drops the connection.
+3. On A, run `rdview -host <B's overlay IP or MagicDNS name> -password <pw>`. Tailscale IPs look like `100.x.y.z`; `tailscale ip -4` on B prints it.
+
+The overlay encrypts everything end to end (WireGuard), so the plaintext wire format is not exposed on the internet. Frame rate drops on a slow upload from B: capture skips ticks while the previous frame is still sending, so it gets choppy rather than lagging behind.
+
 ## Hotkey
 
 Ctrl+Alt+Home toggles capture mode (shown in the window title); the chord itself is never sent to B:
@@ -45,8 +55,8 @@ Text copied on either PC appears on the other within about half a second, in bot
 
 ## Known limits (v1 non-goals)
 
-- Internet / NAT traversal / relay.
-- TLS. Password is challenge-hashed; frame data is plaintext on LAN.
+- Built-in NAT traversal / relay. Internet use needs an overlay network (see above).
+- TLS. Password is challenge-hashed; frame data is plaintext on the wire (safe inside an overlay tunnel, not on an open internet port).
 - Login screen, UAC prompts, session 0 capture.
 - Clipboard images/files, audio, file transfer, multi-monitor.
 - Auto-reconnect.
@@ -64,3 +74,4 @@ Start `.\rdhost.exe -password test123` on B, `.\rdview.exe -host <B ip> -passwor
 - [ ] 5. Wrong password ×3 → right password refused for 60 s, then works.
 - [ ] 6. Resize rdview window → aspect kept, clicks land where pointed.
 - [ ] 7. Copy text on A, paste on B; copy on B, paste on A → both arrive; no ping-pong re-copies.
+- [ ] 8. A and B on different networks, both on Tailscale; `-host <B tailscale ip>` → connects, items 1–7 pass.
