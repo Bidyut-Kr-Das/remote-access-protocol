@@ -24,7 +24,7 @@ RAP is a remote-control tool for Windows, made of two programs and one custom pr
 | `raphost.exe` | **PC B**, the one being controlled | Shares its primary screen and replays the mouse and keyboard input it receives |
 | `rapview.exe` | **PC A**, the one you sit at | Opens a window showing B's screen and forwards your input to B |
 
-It works directly on a LAN, or over the internet through a Tailscale or ZeroTier overlay network. Everything runs over **one TCP connection per session**, and the full wire format is in [`docs/superpowers/specs/2026-11-06-lan-remote-protocol-design.md`](docs/superpowers/specs/2026-11-06-lan-remote-protocol-design.md).
+It works directly on a LAN, or over the internet using the built-in Tailscale support (the `-tsnet` flag) or a separately installed Tailscale or ZeroTier overlay network. Everything runs over **one TCP connection per session**, and the full wire format is in [`docs/protocol-design.md`](docs/protocol-design.md).
 
 ## Features
 
@@ -70,7 +70,10 @@ Diagram sources (editable HTML) live in [`docs/diagrams/`](docs/diagrams/).
 ### Requirements
 
 - Windows on both PCs.
-- Both PCs on the same LAN, or both on the same Tailscale/ZeroTier network (see [Internet use](#internet-use-built-in-tailscale)).
+- One of the following ways for the two PCs to reach each other:
+  - both on the same LAN, or
+  - a free Tailscale account for the built-in `-tsnet` mode, with both PCs signed into the same account (nothing else to install; see [Internet use](#internet-use-built-in-tailscale)), or
+  - both on the same separately installed Tailscale/ZeroTier network.
 - Go 1.27+ only if you build from source.
 
 ### 1. Start the host on PC B
@@ -83,8 +86,9 @@ Diagram sources (editable HTML) live in [`docs/diagrams/`](docs/diagrams/).
 |---|---|---|
 | `-password` | (required) | Shared password |
 | `-port` | `7700` | TCP port to listen on |
+| `-tsnet` | off | Join your tailnet with the built-in Tailscale and listen there instead of on the LAN |
 
-Allow it when Windows Firewall prompts. The host logs `listening on ... (<width>x<height>)` and then one line per session start and end.
+Allow it when Windows Firewall prompts (not needed with `-tsnet`). The host logs `listening on ... (<width>x<height>)` and then one line per session start and end.
 
 ### 2. Connect the viewer from PC A
 
@@ -97,6 +101,7 @@ Allow it when Windows Firewall prompts. The host logs `listening on ... (<width>
 | `-host` | (required) | Host address (IP or DNS name) |
 | `-password` | (required) | Shared password |
 | `-port` | `7700` | Host TCP port |
+| `-tsnet` | off | Connect through the built-in Tailscale; use with a host started with `-tsnet` |
 
 A 1280x720 resizable window opens showing B's desktop, in CAPTURED mode.
 
@@ -193,8 +198,9 @@ internal/
   clipboard/          text clipboard polling and sync without echo
   view/               viewer geometry (letterbox, cursor mapping) and key table
 docs/
-  diagrams/           diagram sources (.html) and exported .svg
-  superpowers/        design spec and implementation plan
+  diagrams/               diagram sources (.html) and exported .svg
+  protocol-design.md      design spec (wire protocol and transports)
+  implementation-plan.md  original v1 implementation plan
 .github/workflows/    CI build, release, README release block
 ```
 
@@ -210,11 +216,13 @@ docs/
 | Clicks or keys do nothing in some windows | Windows blocks input into elevated (administrator) windows (UIPI) unless `raphost` itself runs elevated. |
 | Win key, Alt+Tab or Ctrl+Alt+Del act on A | The OS keeps these; they are not forwarded. |
 | Choppy picture over the internet | B's upload is the limit; frames are skipped rather than queued. |
+| With `-tsnet`, the program waits and keeps repeating a login URL | That PC is not signed in to Tailscale yet. Open the URL in a browser and sign in; the program continues on its own once sign-in finishes. |
+| With `-tsnet`, the viewer cannot reach the host | Make sure both PCs are signed into the **same** Tailscale account. If the `rap-<computer name>` name does not resolve, pass the `100.x.y.z` IP that `raphost` prints on startup to `-host` instead. |
 
 ## Known limits (v1 non-goals)
 
 - Own NAT traversal / relay: internet use goes through Tailscale (`-tsnet`) or another overlay.
-- TLS. The password is challenge-hashed; frame data is plaintext on the wire (safe inside an overlay tunnel, not on an open internet port).
+- TLS. The password is challenge-hashed; frame data is plaintext on the wire (safe inside an overlay tunnel such as `-tsnet`, not on an open internet port).
 - Login screen, UAC prompts, session 0 capture.
 - Clipboard images/files, audio, file transfer, multi-monitor.
 - Auto-reconnect.
@@ -233,3 +241,4 @@ Start `.\raphost.exe -password test123` on B, `.\rapview.exe -host <B ip> -passw
 - [ ] 6. Resize rapview window → aspect kept, clicks land where pointed.
 - [ ] 7. Copy text on A, paste on B; copy on B, paste on A → both arrive; no ping-pong re-copies.
 - [ ] 8. A and B on different networks, both on Tailscale; `-host <B tailscale ip>` → connects, items 1–7 pass.
+- [ ] 9. A and B on different networks with no Tailscale installed; run both with `-tsnet`, sign in with the same account; `-host rap-<B's computer name>` (or the 100.x IP raphost prints) → connects, items 1–7 pass.

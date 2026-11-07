@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.22+, `github.com/kbinani/screenshot`, `github.com/hajimehoshi/ebiten/v2`, `golang.org/x/sys/windows`, stdlib `encoding/binary`, `crypto/sha256`, `image/jpeg`.
 
-**Spec:** `docs/superpowers/specs/2026-11-06-lan-remote-protocol-design.md`
+**Spec:** `docs/protocol-design.md`
 
 ## Global Constraints
 

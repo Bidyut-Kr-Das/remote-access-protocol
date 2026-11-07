@@ -7,11 +7,13 @@ Status: approved
 
 Own remote-control protocol for Windows machines where the built-in Windows remote desktop host is unavailable (Home edition) and AnyDesk-class tools are unreliable. v1 scope: computer A views computer B's screen and drives B's keyboard and mouse over the same LAN, and A can hand keyboard/mouse back to itself with a hotkey. Over-internet transport, dirty-rect encoding and Windows-account auth are later versions and must not require wire changes to the messages defined here.
 
+> Update (after v1): internet use is now possible without changing the wire protocol. Both binaries accept a `-tsnet` flag that embeds Tailscale (`tailscale.com/tsnet`) and carries the same TCP stream over the user's tailnet. See [Transport](#transport) below.
+
 Language: Go 1.22+. Both ends Windows.
 
 ## Non-goals (v1)
 
-- Internet / NAT traversal / relay.
+- Own NAT traversal / relay. (Internet use is handled by running the unchanged protocol over Tailscale, either embedded with `-tsnet` or a separate overlay install; see [Transport](#transport).)
 - TLS. Password is challenge-hashed; frame data is plaintext on LAN.
 - Login screen, UAC prompts, session 0 capture.
 - Clipboard, audio, file transfer, multi-monitor.
@@ -23,6 +25,15 @@ Language: Go 1.22+. Both ends Windows.
 - B runs `raphost.exe`, listens on one TCP port (default 7700).
 - A runs `rapview.exe`, opens one TCP connection to B.
 - One session at a time on B.
+
+## Transport
+
+The protocol only needs a reliable byte stream, so the TCP listener and dialer are swappable without touching the messages below.
+
+- **Default (LAN or separate overlay):** B listens with plain `net.Listen("tcp", ":<port>")` and A dials `<host>:<port>`. This also works over a separately installed Tailscale or ZeroTier network by using the overlay IP.
+- **Embedded Tailscale (`-tsnet` on both sides):** each binary starts a userspace Tailscale node with `tailscale.com/tsnet`. B joins the tailnet as `rap-<computer name>` and listens on `:<port>` inside the tailnet; A joins as `rapview` and dials B through the tailnet with a 15 s timeout. The first run prints a Tailscale login URL (or uses `TS_AUTHKEY`), and both PCs must sign in to the same Tailscale account. Login state is kept under `%AppData%	snet-raphost` and `%AppData%	snet-rapview`. Traffic is WireGuard-encrypted and falls back to Tailscale's DERP relays when no direct path exists. No inbound firewall rule is needed because the node only makes outbound connections.
+
+Everything from the handshake onward is identical on both transports.
 
 ## Wire format
 
@@ -113,7 +124,7 @@ D:\rap\
   internal/protocol/   # message types, encode/decode, handshake  (pure, testable)
   internal/capture/    # screenshot → JPEG
   internal/input/      # SendInput, VK table, held-state tracking
-  docs/superpowers/specs/
+  docs/protocol-design.md
 ```
 
 Dependencies: `github.com/kbinani/screenshot`, `github.com/hajimehoshi/ebiten/v2`, `golang.org/x/sys`.
