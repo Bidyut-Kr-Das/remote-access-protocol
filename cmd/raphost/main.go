@@ -1,4 +1,5 @@
-// Command raphost is the host agent: it shares this screen and accepts input from one LAN client.
+// Command raphost is the host agent: it shares this screen and accepts input from one viewer
+// over the LAN or, with -tsnet, the user's tailnet.
 package main
 
 import (

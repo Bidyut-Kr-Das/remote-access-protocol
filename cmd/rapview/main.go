@@ -1,4 +1,5 @@
-// Command rapview is the viewer: it shows a LAN host's screen and forwards input while captured.
+// Command rapview is the viewer: it shows a host's screen (LAN or, with -tsnet, tailnet)
+// and forwards input while captured.
 package main
 
 import (

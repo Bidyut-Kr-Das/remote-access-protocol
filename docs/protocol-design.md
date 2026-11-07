@@ -16,7 +16,7 @@ Language: Go 1.22+. Both ends Windows.
 - Own NAT traversal / relay. (Internet use is handled by running the unchanged protocol over Tailscale, either embedded with `-tsnet` or a separate overlay install; see [Transport](#transport).)
 - TLS. Password is challenge-hashed; frame data is plaintext on LAN.
 - Login screen, UAC prompts, session 0 capture.
-- Clipboard, audio, file transfer, multi-monitor.
+- Clipboard images/files, audio, file transfer, multi-monitor. (Clipboard text is supported; see CLIPBOARD below.)
 - Auto-reconnect.
 - Forwarding Win key, Alt+Tab, Ctrl+Alt+Del from A (OS keeps them).
 
@@ -73,10 +73,13 @@ Rules on B:
 | 0x24 | RELEASE      | A→B  | none |
 | 0x30 | PING         | A→B  | none |
 | 0x31 | PONG         | B→A  | none |
+| 0x40 | CLIPBOARD    | both | UTF-8 text, max 256 KiB |
 
 FRAME codec: `1` = JPEG. v1 always sends full-screen rect `(0,0,screen_w,screen_h)`. Receivers must honor `x,y,w,h` so dirty rects later need no change.
 
 Keepalive: A sends PING every 2 s; B replies PONG. Either side reading nothing for 6 s → close.
+
+Clipboard: each side polls its local text clipboard every 500 ms (via `GetClipboardSequenceNumber`, so the text is read only when it actually changed) and sends CLIPBOARD when it changes. Text that is empty or larger than 256 KiB is not sent. A received CLIPBOARD sets the local clipboard and is remembered as the last seen text, so it is never echoed back. Sync runs in both directions, whether the viewer is captured or released.
 
 Unknown type → close socket.
 
