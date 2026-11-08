@@ -4,8 +4,11 @@ package main
 
 import (
 	"context"
+	"embed"
 	"flag"
 	"fmt"
+	"image"
+	_ "image/png"
 	"net"
 	"os"
 	"path/filepath"
@@ -19,7 +22,27 @@ import (
 	"tailscale.com/tsnet"
 )
 
+//go:embed icon/*.png
+var iconFS embed.FS
+
 func main() { os.Exit(run(os.Args[1:])) }
+
+// windowIcon loads the embedded 16/32/48 px icons. Ebiten ignores the exe's
+// icon resource (rsrc_windows_amd64.syso), so the window needs them set.
+func windowIcon() []image.Image {
+	var imgs []image.Image
+	for _, n := range []string{"icon/icon16.png", "icon/icon32.png", "icon/icon48.png"} {
+		f, err := iconFS.Open(n)
+		if err != nil {
+			continue
+		}
+		if img, _, err := image.Decode(f); err == nil {
+			imgs = append(imgs, img)
+		}
+		f.Close()
+	}
+	return imgs
+}
 
 func run(args []string) int {
 	fs := flag.NewFlagSet("rapview", flag.ContinueOnError)
@@ -66,6 +89,7 @@ func run(args []string) int {
 	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle(titleCaptured)
+	ebiten.SetWindowIcon(windowIcon())
 	g.start()
 	if err := ebiten.RunGame(g); err != nil && err != ebiten.Termination {
 		fmt.Fprintln(os.Stderr, "rapview:", err)

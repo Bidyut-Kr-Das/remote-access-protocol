@@ -1,0 +1,6 @@
+// Rebuild rsrc_windows_amd64.syso after changing raphost.ico (Windows SDK + MSVC tools):
+//   rc /fo raphost.res raphost.rc
+//   cvtres /machine:x64 /out:rsrc_windows_amd64.syso raphost.res
+// then set the @comp.id symbol's section number from -1 (absolute) to -2 (debug):
+// the Go linker rejects absolute symbols other than @feat.00.
+1 ICON "raphost.ico"
