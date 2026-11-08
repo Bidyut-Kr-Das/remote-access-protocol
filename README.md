@@ -40,7 +40,7 @@ It works directly on a LAN, or over the internet using the built-in Tailscale su
 ## Download
 
 <!-- release:start -->
-No release yet. Pushing a `v*` tag builds and publishes one, and this line is updated automatically.
+**Latest release: [`v1.0.0`](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/tag/v1.0.0)** (2026-11-08) · [release notes](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/tag/v1.0.0) · [raphost.exe](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/download/v1.0.0/raphost.exe) · [rapview.exe](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/download/v1.0.0/rapview.exe)
 <!-- release:end -->
 
 These links always point at the newest release:
