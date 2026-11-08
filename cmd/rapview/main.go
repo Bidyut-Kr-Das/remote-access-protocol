@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -26,6 +27,7 @@ func run(args []string) int {
 	port := fs.Int("port", 7700, "host TCP port")
 	pw := fs.String("password", "", "shared password (required)")
 	ts := fs.Bool("tsnet", false, "dial over your tailnet via embedded Tailscale instead of the LAN")
+	relogin := fs.Bool("relogin", false, "with -tsnet: forget the saved Tailscale login and sign in again (e.g. another account)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -38,7 +40,7 @@ func run(args []string) int {
 	var c net.Conn
 	var err error
 	if *ts {
-		c, err = tailnetDial(addr)
+		c, err = tailnetDial(addr, *relogin)
 	} else {
 		c, err = net.DialTimeout("tcp", addr, 5*time.Second)
 	}
@@ -75,11 +77,22 @@ func run(args []string) int {
 	return 0
 }
 
-// tailnetDial joins the user's tailnet as "rapview" (first run prints a login
-// URL; state persists in the user config dir) and dials addr over it. The
-// server is never closed: it lives as long as the connection, i.e. the process.
-func tailnetDial(addr string) (net.Conn, error) {
-	s := &tsnet.Server{Hostname: "rapview", Logf: func(string, ...any) {}}
+// tailnetDial joins the user's tailnet as "rapview" (first run, or relogin,
+// prints a login URL; state persists in the user config dir) and dials addr
+// over it. The server is never closed: it lives as long as the connection,
+// i.e. the process.
+func tailnetDial(addr string, relogin bool) (net.Conn, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	dir = filepath.Join(dir, "tsnet-rapview")
+	if relogin {
+		if err := os.RemoveAll(dir); err != nil {
+			return nil, err
+		}
+	}
+	s := &tsnet.Server{Dir: dir, Hostname: "rapview", Logf: func(string, ...any) {}}
 	if _, err := s.Up(context.Background()); err != nil {
 		return nil, err
 	}

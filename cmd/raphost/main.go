@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ func run(args []string) int {
 	port := fs.Int("port", 7700, "TCP port to listen on")
 	pw := fs.String("password", "", "shared password (required)")
 	ts := fs.Bool("tsnet", false, "listen on your tailnet via embedded Tailscale instead of the LAN")
+	relogin := fs.Bool("relogin", false, "with -tsnet: forget the saved Tailscale login and sign in again (e.g. another account)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -44,7 +46,7 @@ func run(args []string) int {
 	mgr := host.NewManager(*pw, w, h, protocol.NewLimiter(3, 60*time.Second, time.Now), 5*time.Second)
 	var ln net.Listener
 	if *ts {
-		ln, err = tailnetListen(*port)
+		ln, err = tailnetListen(*port, *relogin)
 	} else {
 		ln, err = net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	}
@@ -68,12 +70,22 @@ func run(args []string) int {
 	}
 }
 
-// tailnetListen joins the user's tailnet as "rap-<computer name>" (first run
-// prints a login URL) and listens there. Node state persists in the user
-// config dir, so later runs connect without logging in again.
-func tailnetListen(port int) (net.Listener, error) {
+// tailnetListen joins the user's tailnet as "rap-<computer name>" (first run,
+// or relogin, prints a login URL) and listens there. Node state persists in
+// the user config dir, so later runs connect without logging in again.
+func tailnetListen(port int, relogin bool) (net.Listener, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	dir = filepath.Join(dir, "tsnet-raphost")
+	if relogin {
+		if err := os.RemoveAll(dir); err != nil {
+			return nil, err
+		}
+	}
 	name, _ := os.Hostname()
-	s := &tsnet.Server{Hostname: "rap-" + name, Logf: func(string, ...any) {}}
+	s := &tsnet.Server{Dir: dir, Hostname: "rap-" + name, Logf: func(string, ...any) {}}
 	st, err := s.Up(context.Background())
 	if err != nil {
 		return nil, err

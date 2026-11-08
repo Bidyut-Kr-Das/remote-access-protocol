@@ -87,6 +87,7 @@ Diagram sources (editable HTML) live in [`docs/diagrams/`](docs/diagrams/).
 | `-password` | (required) | Shared password |
 | `-port` | `7700` | TCP port to listen on |
 | `-tsnet` | off | Join your tailnet with the built-in Tailscale and listen there instead of on the LAN |
+| `-relogin` | off | With `-tsnet`: forget the saved Tailscale login and sign in again, e.g. to switch account |
 
 Allow it when Windows Firewall prompts (not needed with `-tsnet`). The host logs `listening on ... (<width>x<height>)` and then one line per session start and end.
 
@@ -102,6 +103,7 @@ Allow it when Windows Firewall prompts (not needed with `-tsnet`). The host logs
 | `-password` | (required) | Shared password |
 | `-port` | `7700` | Host TCP port |
 | `-tsnet` | off | Connect through the built-in Tailscale; use with a host started with `-tsnet` |
+| `-relogin` | off | With `-tsnet`: forget the saved Tailscale login and sign in again, e.g. to switch account |
 
 A 1280x720 resizable window opens showing B's desktop, in CAPTURED mode.
 
@@ -146,7 +148,7 @@ Both binaries embed Tailscale ([tsnet](https://pkg.go.dev/tailscale.com/tsnet)),
 1. On B, run `raphost -password <pw> -tsnet`. The first run prints a login URL; open it and sign in. B joins your tailnet as `rap-<computer name>` (printed on startup).
 2. On A, run `rapview -host rap-<B's computer name> -password <pw> -tsnet`. The first run prints a login URL; sign in with the **same** Tailscale account.
 
-Login state is saved in a `tsnet-*` folder under `%AppData%`, so later runs connect directly. Delete that folder to sign out. No firewall rule is needed: the embedded node only makes outbound connections. Traffic is WireGuard-encrypted end to end; Tailscale's relays (DERP) carry it when a direct path cannot be punched.
+Login state is saved in a `tsnet-*` folder under `%AppData%`, so later runs connect directly. To sign in with a different Tailscale account, add `-relogin`: it deletes that folder and prints a new login URL. No firewall rule is needed: the embedded node only makes outbound connections. Traffic is WireGuard-encrypted end to end; Tailscale's relays (DERP) carry it when a direct path cannot be punched.
 
 ## Internet use (via a separate Tailscale or ZeroTier install)
 
