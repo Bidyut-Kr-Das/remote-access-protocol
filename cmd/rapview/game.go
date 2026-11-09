@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/draw"
 	"image/jpeg"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,9 @@ const (
 	titleReleased     = "rapview — RELEASED (focus window, Ctrl+Alt+Home to capture)"
 	titleDisconnected = "rapview — Disconnected"
 )
+
+// ioTimeout bounds each per-message read and write; a peer silent this long is gone.
+const ioTimeout = 15 * time.Second
 
 type game struct {
 	conn net.Conn
@@ -70,8 +74,9 @@ func (g *game) send(m protocol.Msg) {
 	if g.dead.Load() {
 		return
 	}
-	g.conn.SetWriteDeadline(time.Now().Add(6 * time.Second))
-	if protocol.Write(g.conn, m) != nil {
+	g.conn.SetWriteDeadline(time.Now().Add(ioTimeout))
+	if err := protocol.Write(g.conn, m); err != nil {
+		log.Printf("disconnected (write): %v", err)
 		g.fail()
 	}
 }
@@ -79,23 +84,24 @@ func (g *game) send(m protocol.Msg) {
 func (g *game) start() {
 	go func() { // reader
 		for {
-			g.conn.SetReadDeadline(time.Now().Add(6 * time.Second)) // host pongs our 2 s pings
+			g.conn.SetReadDeadline(time.Now().Add(ioTimeout)) // host pongs our 2 s pings
 			m, err := protocol.Read(g.conn)
 			if err != nil {
+				log.Printf("disconnected (read): %v", err)
 				g.fail()
 				return
 			}
 			switch m := m.(type) {
 			case protocol.Frame:
-				img, err := jpeg.Decode(bytes.NewReader(m.Data))
-				if err != nil {
-					continue // one bad tile is not fatal
+				// A bad frame is not fatal, but still acked so the host keeps sending.
+				if img, err := jpeg.Decode(bytes.NewReader(m.Data)); err == nil {
+					x, y := int(m.X), int(m.Y)
+					g.mu.Lock()
+					draw.Draw(g.backing, image.Rect(x, y, x+int(m.W), y+int(m.H)), img, image.Point{}, draw.Src)
+					g.dirty = true
+					g.mu.Unlock()
 				}
-				x, y := int(m.X), int(m.Y)
-				g.mu.Lock()
-				draw.Draw(g.backing, image.Rect(x, y, x+int(m.W), y+int(m.H)), img, image.Point{}, draw.Src)
-				g.dirty = true
-				g.mu.Unlock()
+				g.send(protocol.Ack{})
 			case protocol.Clipboard:
 				g.clip.Apply(m.Text)
 			}

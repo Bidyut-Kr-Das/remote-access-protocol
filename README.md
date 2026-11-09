@@ -145,10 +145,10 @@ Push a tag that starts with `v` (for example `git tag v1.0.0 && git push origin 
 
 Both binaries embed Tailscale ([tsnet](https://pkg.go.dev/tailscale.com/tsnet)), so nothing else needs installing. You need a free Tailscale account.
 
-1. On B, run `raphost -password <pw> -tsnet`. The first run prints a login URL; open it and sign in. B joins your tailnet as `rap-<computer name>` (printed on startup).
-2. On A, run `rapview -host rap-<B's computer name> -password <pw> -tsnet`. The first run prints a login URL; sign in with the **same** Tailscale account.
+1. On B, run `raphost -password <pw> -tsnet`. The first run opens a Tailscale login page in your browser (the URL is also printed); sign in. B joins your tailnet as `rap-<computer name>` (printed on startup).
+2. On A, run `rapview -host rap-<B's computer name> -password <pw> -tsnet`. The first run opens the login page in your browser (the URL is also printed); sign in with the **same** Tailscale account. The viewer joins as `rapview-<computer name>` (visible in the admin panel).
 
-Login state is saved in a `tsnet-*` folder under `%AppData%`, so later runs connect directly. To sign in with a different Tailscale account, add `-relogin`: it keeps that folder's device identity and prints a new login URL, so the same account reuses the same device entry. No firewall rule is needed: the embedded node only makes outbound connections. Traffic is WireGuard-encrypted end to end; Tailscale's relays (DERP) carry it when a direct path cannot be punched.
+Login state is saved in a `tsnet-*` folder under `%AppData%`, so later runs connect directly. To sign in with a different Tailscale account, add `-relogin`: it logs out the saved session but keeps that folder's device identity, then opens a new login page in your browser, so the same account reuses the same device entry. No firewall rule is needed: the embedded node only makes outbound connections. Traffic is WireGuard-encrypted end to end; Tailscale's relays (DERP) carry it when a direct path cannot be punched.
 
 ## Internet use (via a separate Tailscale or ZeroTier install)
 
@@ -218,7 +218,7 @@ docs/
 | Clicks or keys do nothing in some windows | Windows blocks input into elevated (administrator) windows (UIPI) unless `raphost` itself runs elevated. |
 | Win key, Alt+Tab or Ctrl+Alt+Del act on A | The OS keeps these; they are not forwarded. |
 | Choppy picture over the internet | B's upload is the limit; frames are skipped rather than queued. |
-| With `-tsnet`, the program waits and keeps repeating a login URL | That PC is not signed in to Tailscale yet. Open the URL in a browser and sign in; the program continues on its own once sign-in finishes. |
+| With `-tsnet`, the program keeps waiting on the Tailscale login page | That PC is not signed in to Tailscale yet. Finish signing in on the login page that opened in your browser (the URL is also printed once); the program continues on its own once sign-in finishes. |
 | With `-tsnet`, the viewer cannot reach the host | Make sure both PCs are signed into the **same** Tailscale account. If the `rap-<computer name>` name does not resolve, pass the `100.x.y.z` IP that `raphost` prints on startup to `-host` instead. |
 
 ## Known limits (v1 non-goals)

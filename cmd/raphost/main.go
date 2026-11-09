@@ -9,7 +9,9 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,22 +72,62 @@ func run(args []string) int {
 	}
 }
 
+var (
+	loginMu  sync.Mutex
+	lastOpen string
+)
+
+// openLogin is tsnet's UserLogf: it logs the message and opens a login URL in
+// the browser once (tsnet repeats the URL every few seconds).
+func openLogin(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	for _, f := range strings.Fields(msg) {
+		if !strings.HasPrefix(f, "https://") {
+			continue
+		}
+		loginMu.Lock()
+		defer loginMu.Unlock()
+		if f == lastOpen {
+			return
+		}
+		lastOpen = f
+		log.Print(msg)
+		if err := exec.Command("rundll32", "url.dll,FileProtocolHandler", f).Start(); err != nil {
+			log.Printf("could not open browser: %v", err)
+		}
+		return
+	}
+	log.Print(msg)
+}
+
 // tailnetListen joins the user's tailnet as "rap-<computer name>" (first run,
-// or relogin, prints a login URL) and listens there. Node state persists in
+// or relogin, opens the login page in the browser) and listens there. Node state persists in
 // the user config dir, so later runs connect without logging in again.
-// Relogin keeps that state (and its machine key), so signing in with the same
-// account reuses this device's admin-panel entry instead of adding "<name>-1".
+// Relogin logs out the saved session but keeps the state dir (device
+// identity), so the URL prints on the first run and the same account reuses
+// this device's admin-panel entry instead of adding "<name>-1".
 func tailnetListen(port int, relogin bool) (net.Listener, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, err
 	}
 	dir = filepath.Join(dir, "tsnet-raphost")
-	if relogin {
-		os.Setenv("TSNET_FORCE_LOGIN", "1")
-	}
 	name, _ := os.Hostname()
-	s := &tsnet.Server{Dir: dir, Hostname: "rap-" + name, Logf: func(string, ...any) {}}
+	hostname := "rap-" + name
+	if relogin {
+		old := &tsnet.Server{Dir: dir, Hostname: hostname, Logf: func(string, ...any) {}}
+		lc, err := old.LocalClient()
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			err = lc.Logout(ctx)
+			cancel()
+		}
+		old.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	s := &tsnet.Server{Dir: dir, Hostname: hostname, Logf: func(string, ...any) {}, UserLogf: openLogin}
 	st, err := s.Up(context.Background())
 	if err != nil {
 		return nil, err
@@ -94,8 +136,12 @@ func tailnetListen(port int, relogin bool) (net.Listener, error) {
 	return s.Listen("tcp", fmt.Sprintf(":%d", port))
 }
 
-// serve runs one session on c. Each protocol.Write is one conn write, so the
-// frame, pong and clipboard writers below need no lock between them.
+// ioTimeout bounds each per-message read and write; a peer silent this long is gone.
+const ioTimeout = 15 * time.Second
+
+// serve runs one session on c. Every write goes through one lock: a protocol.Write
+// may take several conn writes (tsnet's conn can interleave them), so frame,
+// pong and clipboard writers must not overlap.
 func serve(c net.Conn, w, h uint16) {
 	ip, _, _ := net.SplitHostPort(c.RemoteAddr().String())
 	log.Printf("session started %s", ip)
@@ -103,44 +149,51 @@ func serve(c net.Conn, w, h uint16) {
 	var once sync.Once
 	stop := func() { once.Do(func() { close(done) }) }
 	var wg sync.WaitGroup
-	wg.Add(3)
-	frames := make(chan protocol.Frame, 1)
+	wg.Add(2)
+	var wmu sync.Mutex
+	write := func(m protocol.Msg) error {
+		wmu.Lock()
+		defer wmu.Unlock()
+		c.SetWriteDeadline(time.Now().Add(ioTimeout)) // fresh per write; any error ends the session
+		return protocol.Write(c, m)
+	}
+	ack := make(chan struct{}, 1)
 
-	go func() { // screen sender
+	go func() { // screen: capture, encode and send one frame, then wait for the viewer's Ack
 		defer wg.Done()
-		for f := range frames {
-			// Generous deadline: a client stalled this long is gone; any error ends the session.
-			c.SetWriteDeadline(time.Now().Add(6 * time.Second))
-			if protocol.Write(c, f) != nil {
-				stop()
-				return
-			}
-		}
-	}()
-
-	go func() { // capture
-		defer wg.Done()
-		defer close(frames)
-		t := time.NewTicker(100 * time.Millisecond)
-		defer t.Stop()
+		var last time.Time
+		needAck := false
 		for {
-			select {
-			case <-done:
-				return
-			case <-t.C:
+			if needAck {
+				select {
+				case <-done:
+					return
+				case <-ack:
+				}
 			}
+			if d := time.Until(last.Add(100 * time.Millisecond)); d > 0 { // 10 fps cap
+				select {
+				case <-done:
+					return
+				case <-time.After(d):
+				}
+			}
+			last = time.Now()
 			img, err := capture.Grab()
 			if err != nil {
-				continue // e.g. secure desktop; try next tick
+				needAck = false
+				continue // e.g. secure desktop; retry after the interval
 			}
 			f, err := capture.Encode(img, 70)
 			if err != nil {
+				needAck = false
 				continue
 			}
-			select {
-			case frames <- *f:
-			default: // sender still busy with an earlier frame: skip this tick, never queue
+			if write(f) != nil {
+				stop()
+				return
 			}
+			needAck = true
 		}
 	}()
 
@@ -148,21 +201,27 @@ func serve(c net.Conn, w, h uint16) {
 	go func() { // clipboard
 		defer wg.Done()
 		clip.Run(done, func(text string) {
-			c.SetWriteDeadline(time.Now().Add(6 * time.Second))
-			protocol.Write(c, protocol.Clipboard{Text: text})
+			write(protocol.Clipboard{Text: text})
 		})
 	}()
 
 	inj := input.NewInjector(w, h) // not goroutine-safe: used only here
+	var cause error
 	for {
-		c.SetReadDeadline(time.Now().Add(6 * time.Second)) // viewer pings every 2 s
+		c.SetReadDeadline(time.Now().Add(ioTimeout)) // viewer pings every 2 s
 		m, err := protocol.Read(c)
 		if err != nil {
+			cause = err
 			break
 		}
 		switch m := m.(type) {
 		case protocol.Ping:
-			protocol.Write(c, protocol.Pong{})
+			write(protocol.Pong{})
+		case protocol.Ack:
+			select {
+			case ack <- struct{}{}:
+			default:
+			}
 		case protocol.Clipboard:
 			clip.Apply(m.Text)
 		default:
@@ -173,5 +232,5 @@ func serve(c net.Conn, w, h uint16) {
 	stop()
 	c.Close()
 	wg.Wait()
-	log.Printf("session ended %s", ip)
+	log.Printf("session ended %s: %v", ip, cause)
 }

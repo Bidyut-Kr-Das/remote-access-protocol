@@ -9,10 +9,15 @@ import (
 	"fmt"
 	"image"
 	_ "image/png"
+	"log"
 	"net"
+	"net/netip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -63,7 +68,15 @@ func run(args []string) int {
 	var c net.Conn
 	var err error
 	if *ts {
-		c, err = tailnetDial(addr, *relogin)
+		var s *tsnet.Server
+		c, s, err = tailnetDial(addr, *relogin)
+		if err == nil {
+			logPath(s, c)
+			go func() {
+				time.Sleep(10 * time.Second) // usually starts on DERP, then upgrades to direct
+				logPath(s, c)
+			}()
+		}
 	} else {
 		c, err = net.DialTimeout("tcp", addr, 5*time.Second)
 	}
@@ -101,26 +114,98 @@ func run(args []string) int {
 	return 0
 }
 
-// tailnetDial joins the user's tailnet as "rapview" (first run, or relogin,
-// prints a login URL; state persists in the user config dir) and dials addr
+var (
+	loginMu  sync.Mutex
+	lastOpen string
+)
+
+// openLogin is tsnet's UserLogf: it logs the message and opens a login URL in
+// the browser once (tsnet repeats the URL every few seconds).
+func openLogin(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	for _, f := range strings.Fields(msg) {
+		if !strings.HasPrefix(f, "https://") {
+			continue
+		}
+		loginMu.Lock()
+		defer loginMu.Unlock()
+		if f == lastOpen {
+			return
+		}
+		lastOpen = f
+		log.Print(msg)
+		if err := exec.Command("rundll32", "url.dll,FileProtocolHandler", f).Start(); err != nil {
+			log.Printf("could not open browser: %v", err)
+		}
+		return
+	}
+	log.Print(msg)
+}
+
+// tailnetDial joins the user's tailnet as "rapview-<computer name>" (first run, or relogin,
+// opens the login page in the browser; state persists in the user config dir) and dials addr
 // over it. The server is never closed: it lives as long as the connection,
-// i.e. the process. Relogin keeps that state (and its machine key), so
-// signing in with the same account reuses this device's admin-panel entry
-// instead of adding "rapview-1".
-func tailnetDial(addr string, relogin bool) (net.Conn, error) {
+// i.e. the process. Relogin logs out the saved session but keeps the state dir
+// (device identity), so the URL prints on the first run and the same account
+// reuses this device's admin-panel entry.
+func tailnetDial(addr string, relogin bool) (net.Conn, *tsnet.Server, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dir = filepath.Join(dir, "tsnet-rapview")
+	name, _ := os.Hostname()
+	hostname := "rapview-" + name
 	if relogin {
-		os.Setenv("TSNET_FORCE_LOGIN", "1")
+		old := &tsnet.Server{Dir: dir, Hostname: hostname, Logf: func(string, ...any) {}}
+		lc, err := old.LocalClient()
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			err = lc.Logout(ctx)
+			cancel()
+		}
+		old.Close()
+		if err != nil {
+			return nil, nil, err
+		}
 	}
-	s := &tsnet.Server{Dir: dir, Hostname: "rapview", Logf: func(string, ...any) {}}
+	s := &tsnet.Server{Dir: dir, Hostname: hostname, Logf: func(string, ...any) {}, UserLogf: openLogin}
 	if _, err := s.Up(context.Background()); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return s.Dial(ctx, "tcp", addr)
+	c, err := s.Dial(ctx, "tcp", addr)
+	return c, s, err
+}
+
+// logPath logs whether the tailnet path to c's peer is direct or relayed.
+func logPath(s *tsnet.Server, c net.Conn) {
+	lc, err := s.LocalClient()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	st, err := lc.Status(ctx)
+	if err != nil {
+		return
+	}
+	ap, err := netip.ParseAddrPort(c.RemoteAddr().String())
+	if err != nil {
+		return
+	}
+	for _, p := range st.Peer {
+		for _, ip := range p.TailscaleIPs {
+			if ip != ap.Addr() {
+				continue
+			}
+			if p.CurAddr != "" {
+				log.Printf("path: direct %s", p.CurAddr)
+			} else {
+				log.Printf("path: relay %s", p.Relay)
+			}
+			return
+		}
+	}
 }

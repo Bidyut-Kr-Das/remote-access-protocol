@@ -19,6 +19,7 @@ const (
 	TypeRelease     byte = 0x24
 	TypePing        byte = 0x30
 	TypePong        byte = 0x31
+	TypeAck         byte = 0x32
 	TypeClipboard   byte = 0x40
 )
 
@@ -62,6 +63,9 @@ type Release struct{}
 type Ping struct{}
 type Pong struct{}
 
+// Ack is sent by the viewer once it has drawn a frame; the host sends the next frame only after it.
+type Ack struct{}
+
 // Clipboard carries UTF-8 text; either side sends it when its local clipboard changes.
 type Clipboard struct{ Text string }
 
@@ -77,6 +81,7 @@ func (Key) Type() byte         { return TypeKey }
 func (Release) Type() byte     { return TypeRelease }
 func (Ping) Type() byte        { return TypePing }
 func (Pong) Type() byte        { return TypePong }
+func (Ack) Type() byte         { return TypeAck }
 func (Clipboard) Type() byte   { return TypeClipboard }
 
 var be = binary.BigEndian
@@ -100,4 +105,5 @@ func (m Key) Marshal() []byte         { return append(be.AppendUint16(nil, m.VK)
 func (Release) Marshal() []byte       { return nil }
 func (Ping) Marshal() []byte          { return nil }
 func (Pong) Marshal() []byte          { return nil }
+func (Ack) Marshal() []byte           { return nil }
 func (m Clipboard) Marshal() []byte   { return []byte(m.Text) }

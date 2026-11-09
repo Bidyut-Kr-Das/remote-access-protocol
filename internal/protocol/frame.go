@@ -100,6 +100,8 @@ func unmarshal(t byte, p []byte) (Msg, error) {
 		return Ping{}, nil
 	case TypePong:
 		return Pong{}, nil
+	case TypeAck:
+		return Ack{}, nil
 	case TypeClipboard:
 		if len(p) > MaxClipboard {
 			return nil, ErrOversize

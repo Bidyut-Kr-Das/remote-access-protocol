@@ -24,6 +24,7 @@ func TestRoundTripAll(t *testing.T) {
 		Release{},
 		Ping{},
 		Pong{},
+		Ack{},
 		Clipboard{Text: "héllo\n"},
 	}
 	for _, m := range msgs {
