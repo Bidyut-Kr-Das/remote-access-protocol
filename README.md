@@ -148,7 +148,7 @@ Both binaries embed Tailscale ([tsnet](https://pkg.go.dev/tailscale.com/tsnet)),
 1. On B, run `raphost -password <pw> -tsnet`. The first run prints a login URL; open it and sign in. B joins your tailnet as `rap-<computer name>` (printed on startup).
 2. On A, run `rapview -host rap-<B's computer name> -password <pw> -tsnet`. The first run prints a login URL; sign in with the **same** Tailscale account.
 
-Login state is saved in a `tsnet-*` folder under `%AppData%`, so later runs connect directly. To sign in with a different Tailscale account, add `-relogin`: it deletes that folder and prints a new login URL. No firewall rule is needed: the embedded node only makes outbound connections. Traffic is WireGuard-encrypted end to end; Tailscale's relays (DERP) carry it when a direct path cannot be punched.
+Login state is saved in a `tsnet-*` folder under `%AppData%`, so later runs connect directly. To sign in with a different Tailscale account, add `-relogin`: it keeps that folder's device identity and prints a new login URL, so the same account reuses the same device entry. No firewall rule is needed: the embedded node only makes outbound connections. Traffic is WireGuard-encrypted end to end; Tailscale's relays (DERP) carry it when a direct path cannot be punched.
 
 ## Internet use (via a separate Tailscale or ZeroTier install)
 

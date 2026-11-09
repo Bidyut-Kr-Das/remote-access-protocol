@@ -104,7 +104,9 @@ func run(args []string) int {
 // tailnetDial joins the user's tailnet as "rapview" (first run, or relogin,
 // prints a login URL; state persists in the user config dir) and dials addr
 // over it. The server is never closed: it lives as long as the connection,
-// i.e. the process.
+// i.e. the process. Relogin keeps that state (and its machine key), so
+// signing in with the same account reuses this device's admin-panel entry
+// instead of adding "rapview-1".
 func tailnetDial(addr string, relogin bool) (net.Conn, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -112,9 +114,7 @@ func tailnetDial(addr string, relogin bool) (net.Conn, error) {
 	}
 	dir = filepath.Join(dir, "tsnet-rapview")
 	if relogin {
-		if err := os.RemoveAll(dir); err != nil {
-			return nil, err
-		}
+		os.Setenv("TSNET_FORCE_LOGIN", "1")
 	}
 	s := &tsnet.Server{Dir: dir, Hostname: "rapview", Logf: func(string, ...any) {}}
 	if _, err := s.Up(context.Background()); err != nil {

@@ -73,6 +73,8 @@ func run(args []string) int {
 // tailnetListen joins the user's tailnet as "rap-<computer name>" (first run,
 // or relogin, prints a login URL) and listens there. Node state persists in
 // the user config dir, so later runs connect without logging in again.
+// Relogin keeps that state (and its machine key), so signing in with the same
+// account reuses this device's admin-panel entry instead of adding "<name>-1".
 func tailnetListen(port int, relogin bool) (net.Listener, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -80,9 +82,7 @@ func tailnetListen(port int, relogin bool) (net.Listener, error) {
 	}
 	dir = filepath.Join(dir, "tsnet-raphost")
 	if relogin {
-		if err := os.RemoveAll(dir); err != nil {
-			return nil, err
-		}
+		os.Setenv("TSNET_FORCE_LOGIN", "1")
 	}
 	name, _ := os.Hostname()
 	s := &tsnet.Server{Dir: dir, Hostname: "rap-" + name, Logf: func(string, ...any) {}}
