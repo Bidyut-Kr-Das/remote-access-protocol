@@ -59,7 +59,7 @@ func TestHandshakeBadVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	ch := m.(Challenge)
-	if err := Write(c, Hello{Version: 2, Hash: HashPassword(pw, ch.Nonce)}); err != nil {
+	if err := Write(c, Hello{Version: 99, Hash: HashPassword(pw, ch.Nonce)}); err != nil {
 		t.Fatal(err)
 	}
 	m, err = Read(c)
@@ -133,7 +133,7 @@ func TestHandshakeBlockedIP(t *testing.T) {
 	}
 }
 
-// attempt runs one full handshake against lim; badVer sends Version 2 via a raw client.
+// attempt runs one full handshake against lim; badVer sends Version 99 via a raw client.
 func attempt(t *testing.T, lim *Limiter, password string, badVer bool) error {
 	t.Helper()
 	s, c := net.Pipe()
@@ -146,7 +146,7 @@ func attempt(t *testing.T, lim *Limiter, password string, badVer bool) error {
 			t.Fatal(err)
 		}
 		n := m.(Challenge).Nonce
-		if err := Write(c, Hello{Version: 2, Hash: HashPassword(pw, n)}); err != nil {
+		if err := Write(c, Hello{Version: 99, Hash: HashPassword(pw, n)}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := Read(c); err != nil {

@@ -26,7 +26,7 @@ const (
 const (
 	MaxLen            = 16 << 20
 	MaxClipboard      = 256 << 10
-	Version      byte = 1
+	Version      byte = 2 // 2: frames are scaled sub-rects, not full host-size
 )
 
 var (

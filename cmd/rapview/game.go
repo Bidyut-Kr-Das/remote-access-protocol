@@ -33,7 +33,8 @@ type game struct {
 	w, h int
 
 	mu      sync.Mutex // guards backing, dirty
-	backing *image.RGBA
+	backing *image.RGBA // frame space (scaled host screen); sized by the first frame
+	gotFrame bool
 	dirty   bool
 	img     *ebiten.Image
 
@@ -97,6 +98,11 @@ func (g *game) start() {
 				if img, err := jpeg.Decode(bytes.NewReader(m.Data)); err == nil {
 					x, y := int(m.X), int(m.Y)
 					g.mu.Lock()
+					if b := g.backing.Rect; !g.gotFrame || (x == 0 && y == 0 && (int(m.W) > b.Dx() || int(m.H) > b.Dy())) {
+						g.backing = image.NewRGBA(image.Rect(0, 0, int(m.W), int(m.H))) // first frame is full
+						g.img = ebiten.NewImage(int(m.W), int(m.H))
+					}
+					g.gotFrame = true
 					draw.Draw(g.backing, image.Rect(x, y, x+int(m.W), y+int(m.H)), img, image.Point{}, draw.Src)
 					g.dirty = true
 					g.mu.Unlock()
@@ -205,13 +211,14 @@ func (g *game) Draw(dst *ebiten.Image) {
 		g.img.WritePixels(g.backing.Pix)
 		g.dirty = false
 	}
+	img, fw, fh := g.img, g.backing.Rect.Dx(), g.backing.Rect.Dy()
 	g.mu.Unlock()
-	s, ox, oy := view.Fit(g.w, g.h, g.ww, g.wh)
+	s, ox, oy := view.Fit(fw, fh, g.ww, g.wh)
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(s, s)
 	op.GeoM.Translate(ox, oy)
 	op.Filter = ebiten.FilterLinear
-	dst.DrawImage(g.img, op)
+	dst.DrawImage(img, op)
 }
 
 func (g *game) Layout(ow, oh int) (int, int) {
