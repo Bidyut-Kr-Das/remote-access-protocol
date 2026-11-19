@@ -34,12 +34,18 @@ func Grab() (*image.RGBA, error) { return screenshot.CaptureDisplay(0) }
 
 // Encode JPEG-encodes img as a frame (Codec 1) placed at img's bounds (a SubImage keeps its Min).
 func Encode(img image.Image, quality int) (*protocol.Frame, error) {
+	return EncodeTo(new(bytes.Buffer), img, quality)
+}
+
+// EncodeTo is Encode into a caller-owned buf (reset first). Frame.Data aliases buf.Bytes(), so it
+// is valid only until buf is next used.
+func EncodeTo(buf *bytes.Buffer, img image.Image, quality int) (*protocol.Frame, error) {
 	w, h, err := dims(img.Bounds())
 	if err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
+	buf.Reset()
+	if err := jpeg.Encode(buf, img, &jpeg.Options{Quality: quality}); err != nil {
 		return nil, err
 	}
 	b := img.Bounds()

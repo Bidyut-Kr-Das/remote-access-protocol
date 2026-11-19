@@ -32,11 +32,13 @@ type game struct {
 	conn net.Conn
 	w, h int
 
-	mu      sync.Mutex // guards backing, dirty
-	backing *image.RGBA // frame space (scaled host screen); sized by the first frame
+	mu       sync.Mutex  // guards backing, dirty
+	backing  *image.RGBA // frame space (scaled host screen); sized by the first frame
 	gotFrame bool
-	dirty   bool
-	img     *ebiten.Image
+	dirty    image.Rectangle // union of blits since the last Draw; empty if none
+	full     bool            // img was recreated: upload all of backing
+	scratch  []byte          // reused dirty-rect upload buffer
+	img      *ebiten.Image
 
 	dead      atomic.Bool
 	closeOnce sync.Once
@@ -106,10 +108,12 @@ func (g *game) start() {
 						}
 						g.backing = image.NewRGBA(image.Rect(0, 0, nw, nh))
 						g.img = ebiten.NewImage(nw, nh)
+						g.full = true
 					}
 					g.gotFrame = true
-					draw.Draw(g.backing, image.Rect(x, y, x+int(m.W), y+int(m.H)), img, image.Point{}, draw.Src)
-					g.dirty = true
+					r := image.Rect(x, y, x+int(m.W), y+int(m.H))
+					draw.Draw(g.backing, r, img, image.Point{}, draw.Src)
+					g.dirty = unionRect(g.dirty, r)
 					g.mu.Unlock()
 				}
 				g.send(protocol.Ack{})
@@ -212,9 +216,18 @@ func (g *game) Update() error {
 
 func (g *game) Draw(dst *ebiten.Image) {
 	g.mu.Lock()
-	if g.dirty {
+	if g.full {
 		g.img.WritePixels(g.backing.Pix)
-		g.dirty = false
+		g.full, g.dirty = false, image.Rectangle{}
+	} else if r := g.dirty; !r.Empty() {
+		n := 4 * r.Dx()
+		g.scratch = g.scratch[:0]
+		for y := r.Min.Y; y < r.Max.Y; y++ {
+			o := g.backing.PixOffset(r.Min.X, y)
+			g.scratch = append(g.scratch, g.backing.Pix[o:o+n]...)
+		}
+		g.img.SubImage(r).(*ebiten.Image).WritePixels(g.scratch)
+		g.dirty = image.Rectangle{}
 	}
 	img, fw, fh := g.img, g.backing.Rect.Dx(), g.backing.Rect.Dy()
 	g.mu.Unlock()
@@ -235,4 +248,12 @@ func (g *game) Layout(ow, oh int) (int, int) {
 // no frame yet, or the rect extends past b. Never shrinks: a (0,0) tile looks like a small full frame.
 func needRealloc(b image.Rectangle, x, y, w, h int, got bool) bool {
 	return !got || x+w > b.Dx() || y+h > b.Dy()
+}
+
+// unionRect is the bounding box of a and b; an empty one is ignored.
+func unionRect(a, b image.Rectangle) image.Rectangle {
+	if a.Empty() {
+		return b
+	}
+	return a.Union(b)
 }

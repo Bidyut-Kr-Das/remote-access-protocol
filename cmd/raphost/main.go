@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -189,6 +190,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		var scaled, prev *image.RGBA
 		var tGrab, tScale, tEnc, tWrite, tAck time.Duration
 		var frames, skipped, bytesSent int
+		var bufs []*bytes.Buffer // one per rect of a batch: all encode before any write
 		since := time.Now()
 		lastChange := since // frame loop only; starts active so the first second is full rate
 		for {
@@ -228,8 +230,11 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			}
 			t = time.Now()
 			fs := make([]*protocol.Frame, 0, len(rects))
-			for _, r := range rects {
-				f, err := capture.Encode(cur.SubImage(r), o.quality)
+			for i, r := range rects {
+				if i == len(bufs) {
+					bufs = append(bufs, new(bytes.Buffer))
+				}
+				f, err := capture.EncodeTo(bufs[i], cur.SubImage(r), o.quality)
 				if err != nil {
 					break
 				}

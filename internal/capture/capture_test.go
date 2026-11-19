@@ -127,3 +127,22 @@ func TestDiffRectsFallsBackWhenMostlyDirty(t *testing.T) {
 		t.Fatalf("got %v want [%v]", got, DiffRect(a, b))
 	}
 }
+
+func TestEncodeToReusesBuffer(t *testing.T) {
+	var buf bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 64, 48))
+	var caps []int
+	for range 2 {
+		f, err := EncodeTo(&buf, img, 70)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := jpeg.Decode(bytes.NewReader(f.Data)); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		caps = append(caps, buf.Cap())
+	}
+	if caps[0] != caps[1] {
+		t.Errorf("buf.Cap changed: %d -> %d", caps[0], caps[1])
+	}
+}
