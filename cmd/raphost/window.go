@@ -1,6 +1,10 @@
 package main
 
-import "sync"
+import (
+	"sync"
+
+	"rap/internal/protocol"
+)
 
 // window bounds Frame messages in flight (sent, not yet acked).
 type window struct {
@@ -52,4 +56,13 @@ func notify(ch chan struct{}) {
 	case ch <- struct{}{}:
 	default:
 	}
+}
+
+// isInput reports whether m is injected user input (should trigger an immediate capture).
+func isInput(m protocol.Msg) bool {
+	switch m.(type) {
+	case protocol.MouseMove, protocol.MouseButton, protocol.MouseWheel, protocol.Key:
+		return true
+	}
+	return false
 }

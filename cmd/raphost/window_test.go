@@ -3,6 +3,8 @@ package main
 import (
 	"testing"
 	"time"
+
+	"rap/internal/protocol"
 )
 
 func acquireAsync(w *window, done <-chan struct{}) <-chan bool {
@@ -67,5 +69,25 @@ func TestNotifyNeverBlocks(t *testing.T) {
 	}
 	if len(ch) != 1 {
 		t.Fatalf("len = %d, want 1", len(ch))
+	}
+}
+
+func TestIsInput(t *testing.T) {
+	for _, c := range []struct {
+		m    protocol.Msg
+		want bool
+	}{
+		{protocol.MouseMove{}, true},
+		{protocol.MouseButton{}, true},
+		{protocol.MouseWheel{}, true},
+		{protocol.Key{}, true},
+		{protocol.Ping{}, false},
+		{protocol.Ack{}, false},
+		{protocol.Clipboard{}, false},
+		{protocol.Release{}, false},
+	} {
+		if got := isInput(c.m); got != c.want {
+			t.Errorf("isInput(%T) = %v, want %v", c.m, got, c.want)
+		}
 	}
 }

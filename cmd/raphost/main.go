@@ -34,7 +34,7 @@ func run(args []string) int {
 	ts := fs.Bool("tsnet", false, "listen on your tailnet via embedded Tailscale instead of the LAN")
 	relogin := fs.Bool("relogin", false, "with -tsnet: forget the saved Tailscale login and sign in again (e.g. another account)")
 	maxW := fs.Int("maxw", 1280, "downscale the stream to at most this width (0 = no scaling)")
-	fps := fs.Int("fps", 30, "maximum frames per second")
+	fps := fs.Int("fps", 30, "target frames per second; input triggers an immediate frame")
 	quality := fs.Int("quality", 55, "JPEG quality 1-100")
 	win := fs.Int("window", 3, "frames in flight before waiting for viewer acks (1 = stop-and-wait)")
 	if err := fs.Parse(args); err != nil {
@@ -177,6 +177,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		return protocol.Write(c, m)
 	}
 	win := newWindow(o.window)
+	wake := make(chan struct{}, 1) // input arrived: skip the pacing wait
 
 	go func() { // screen: capture, encode and send one frame, pipelined up to o.window unacked
 		defer wg.Done()
@@ -195,6 +196,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 				select {
 				case <-done:
 					return
+				case <-wake:
 				case <-time.After(d):
 				}
 			}
@@ -274,6 +276,9 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			clip.Apply(m.Text)
 		default:
 			inj.Apply(m)
+			if isInput(m) {
+				notify(wake)
+			}
 		}
 	}
 	inj.Release()
