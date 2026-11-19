@@ -168,7 +168,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 	var once sync.Once
 	stop := func() { once.Do(func() { close(done) }) }
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	var wmu sync.Mutex
 	write := func(m protocol.Msg) error {
 		wmu.Lock()
@@ -250,6 +250,22 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		}
 	}()
 
+	pong := make(chan struct{}, 1)
+	go func() { // pong: off the reader so input injection never waits on wmu
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			case <-pong:
+				if write(protocol.Pong{}) != nil {
+					stop()
+					return
+				}
+			}
+		}
+	}()
+
 	clip := clipboard.New()
 	go func() { // clipboard
 		defer wg.Done()
@@ -269,7 +285,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		}
 		switch m := m.(type) {
 		case protocol.Ping:
-			write(protocol.Pong{})
+			notify(pong)
 		case protocol.Ack:
 			win.ack()
 		case protocol.Clipboard:
