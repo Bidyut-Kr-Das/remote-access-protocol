@@ -26,20 +26,3 @@ func TestNeedRealloc(t *testing.T) {
 		}
 	}
 }
-
-func TestUnionRect(t *testing.T) {
-	r1, r2 := image.Rect(0, 0, 10, 10), image.Rect(20, 5, 30, 40)
-	for _, c := range []struct {
-		name string
-		a, b image.Rectangle
-		want image.Rectangle
-	}{
-		{"empty+r", image.Rectangle{}, r1, r1},
-		{"r+empty", r1, image.Rectangle{}, r1},
-		{"bounding union", r1, r2, image.Rect(0, 0, 30, 40)},
-	} {
-		if got := unionRect(c.a, c.b); got != c.want {
-			t.Errorf("%s: got %v want %v", c.name, got, c.want)
-		}
-	}
-}

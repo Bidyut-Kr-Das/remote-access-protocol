@@ -113,7 +113,7 @@ func (g *game) start() {
 					g.gotFrame = true
 					r := image.Rect(x, y, x+int(m.W), y+int(m.H))
 					draw.Draw(g.backing, r, img, image.Point{}, draw.Src)
-					g.dirty = unionRect(g.dirty, r)
+					g.dirty = g.dirty.Union(r)
 					g.mu.Unlock()
 				}
 				g.send(protocol.Ack{})
@@ -248,12 +248,4 @@ func (g *game) Layout(ow, oh int) (int, int) {
 // no frame yet, or the rect extends past b. Never shrinks: a (0,0) tile looks like a small full frame.
 func needRealloc(b image.Rectangle, x, y, w, h int, got bool) bool {
 	return !got || x+w > b.Dx() || y+h > b.Dy()
-}
-
-// unionRect is the bounding box of a and b; an empty one is ignored.
-func unionRect(a, b image.Rectangle) image.Rectangle {
-	if a.Empty() {
-		return b
-	}
-	return a.Union(b)
 }

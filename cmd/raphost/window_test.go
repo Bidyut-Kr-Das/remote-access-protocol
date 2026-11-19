@@ -171,4 +171,8 @@ func TestFrameInterval(t *testing.T) {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
 	}
+	// active slower than idle: idle must not poll faster than active
+	if got := frameInterval(now, time.Time{}, time.Time{}, 200*time.Millisecond, idle); got != 200*time.Millisecond {
+		t.Errorf("slow active: got %v, want 200ms", got)
+	}
 }

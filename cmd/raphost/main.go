@@ -189,7 +189,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		var last time.Time
 		var scaled, prev *image.RGBA
 		var tGrab, tScale, tEnc, tWrite, tAck time.Duration
-		var frames, skipped, bytesSent int
+		var frames, rectsSent, skipped, bytesSent int
 		var bufs []*bytes.Buffer // one per rect of a batch: all encode before any write
 		since := time.Now()
 		lastChange := since // frame loop only; starts active so the first second is full rate
@@ -255,16 +255,17 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 					return
 				}
 				bytesSent += len(f.Data)
+				rectsSent++
 			}
 			tWrite += time.Since(t)
 			frames++
 			if el := time.Since(since); el >= 2*time.Second {
 				n := time.Duration(max(frames, 1))
-				log.Printf("stream: %.1f fps %.0f KB/s grab %v scale %v enc %v write %v ack %v skipped %d",
-					float64(frames)/el.Seconds(), float64(bytesSent)/1024/el.Seconds(),
+				log.Printf("stream: %.1f fps %.1f rects/s %.0f KB/s grab %v scale %v enc %v write %v wait %v skipped %d",
+					float64(frames)/el.Seconds(), float64(rectsSent)/el.Seconds(), float64(bytesSent)/1024/el.Seconds(),
 					(tGrab / n).Round(time.Millisecond), (tScale / n).Round(time.Millisecond), (tEnc / n).Round(time.Millisecond),
 					(tWrite / n).Round(time.Millisecond), (tAck / n).Round(time.Millisecond), skipped)
-				tGrab, tScale, tEnc, tWrite, tAck, frames, skipped, bytesSent, since = 0, 0, 0, 0, 0, 0, 0, 0, time.Now()
+				tGrab, tScale, tEnc, tWrite, tAck, frames, rectsSent, skipped, bytesSent, since = 0, 0, 0, 0, 0, 0, 0, 0, 0, time.Now()
 			}
 		}
 	}()
