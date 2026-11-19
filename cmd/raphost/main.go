@@ -36,7 +36,7 @@ func run(args []string) int {
 	maxW := fs.Int("maxw", 1280, "downscale the stream to at most this width (0 = no scaling)")
 	fps := fs.Int("fps", 30, "target frames per second; input triggers an immediate frame")
 	quality := fs.Int("quality", 55, "JPEG quality 1-100")
-	win := fs.Int("window", 3, "frames in flight before waiting for viewer acks (1 = stop-and-wait)")
+	win := fs.Int("window", 3, "frame batches in flight before waiting for viewer acks (1 = stop-and-wait)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -179,7 +179,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 	win := newWindow(o.window)
 	wake := make(chan struct{}, 1) // input arrived: skip the pacing wait
 
-	go func() { // screen: capture, encode and send one frame, pipelined up to o.window unacked
+	go func() { // screen: capture, encode and send one batch, pipelined up to o.window unacked batches
 		defer wg.Done()
 		var last time.Time
 		var scaled, prev *image.RGBA
@@ -237,7 +237,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			}
 			copy(prev.Pix, cur.Pix)
 			t = time.Now()
-			win.add(len(fs)) // before the writes: an Ack can beat us back; one Ack per Frame message
+			win.add(len(fs)) // one batch, before the writes: an Ack can beat us back
 			for _, f := range fs {
 				if write(f) != nil {
 					stop()

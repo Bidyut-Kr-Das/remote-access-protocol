@@ -15,8 +15,12 @@ func acquireAsync(w *window, done <-chan struct{}) <-chan bool {
 
 func TestWindowBlocksWhenFull(t *testing.T) {
 	w := newWindow(3)
-	w.add(3)
-	r := acquireAsync(w, make(chan struct{}))
+	for i := 0; i < 3; i++ {
+		w.add(1)
+	}
+	done := make(chan struct{})
+	defer close(done)
+	r := acquireAsync(w, done)
 	select {
 	case <-r:
 		t.Fatal("acquire returned while window full")
@@ -38,17 +42,21 @@ func TestWindowAckFloorsAtZero(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		w.ack()
 	}
-	w.add(3)
+	for i := 0; i < 3; i++ {
+		w.add(1)
+	}
+	done := make(chan struct{})
+	defer close(done)
 	select {
-	case <-acquireAsync(w, make(chan struct{})):
+	case <-acquireAsync(w, done):
 		t.Fatal("acquire returned; stale acks leaked into the window")
 	case <-time.After(50 * time.Millisecond):
 	}
 }
 
 func TestWindowAcquireAbortsOnDone(t *testing.T) {
-	w := newWindow(3)
-	w.add(3)
+	w := newWindow(1)
+	w.add(1)
 	done := make(chan struct{})
 	r := acquireAsync(w, done)
 	close(done)
@@ -59,6 +67,59 @@ func TestWindowAcquireAbortsOnDone(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("acquire did not abort on done")
+	}
+}
+
+func TestWindowCountsBatches(t *testing.T) {
+	w := newWindow(1)
+	w.add(3) // one batch of 3 Frame messages
+	done := make(chan struct{})
+	defer close(done)
+	r := acquireAsync(w, done)
+	for i := 0; i < 2; i++ {
+		w.ack()
+	}
+	select {
+	case <-r:
+		t.Fatal("acquire returned before the whole batch was acked")
+	case <-time.After(50 * time.Millisecond):
+	}
+	w.ack()
+	select {
+	case ok := <-r:
+		if !ok {
+			t.Fatal("acquire returned false after batch acked")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("acquire still blocked after batch acked")
+	}
+}
+
+func TestWindowBatchIsOneSlot(t *testing.T) {
+	w := newWindow(2)
+	w.add(10) // a 10-rect batch uses one of 2 slots
+	done := make(chan struct{})
+	defer close(done)
+	select {
+	case ok := <-acquireAsync(w, done):
+		if !ok {
+			t.Fatal("acquire returned false")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("acquire blocked with only one batch in flight")
+	}
+}
+
+func TestWindowEmptyAckIgnored(t *testing.T) {
+	w := newWindow(1)
+	w.ack() // stray: empty queue
+	w.add(1)
+	done := make(chan struct{})
+	defer close(done)
+	select {
+	case <-acquireAsync(w, done):
+		t.Fatal("acquire returned; stray ack counted against a later batch")
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
