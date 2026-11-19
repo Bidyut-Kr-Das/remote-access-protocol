@@ -152,3 +152,23 @@ func TestIsInput(t *testing.T) {
 		}
 	}
 }
+
+func TestFrameInterval(t *testing.T) {
+	now := time.Now()
+	const active, idle = 33 * time.Millisecond, 100 * time.Millisecond
+	tests := []struct {
+		name              string
+		lastInput, change time.Time
+		want              time.Duration
+	}{
+		{"recent input", now.Add(-500 * time.Millisecond), now.Add(-5 * time.Second), active},
+		{"recent change", now.Add(-5 * time.Second), now.Add(-500 * time.Millisecond), active},
+		{"both stale", now.Add(-5 * time.Second), now.Add(-5 * time.Second), idle},
+		{"zero values", time.Time{}, time.Time{}, idle},
+	}
+	for _, tc := range tests {
+		if got := frameInterval(now, tc.lastInput, tc.change, active, idle); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

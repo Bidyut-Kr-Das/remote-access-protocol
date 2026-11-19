@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"rap/internal/capture"
@@ -152,6 +153,8 @@ func tailnetListen(port int, relogin bool) (net.Listener, error) {
 // ioTimeout bounds each per-message read and write; a peer silent this long is gone.
 const ioTimeout = 15 * time.Second
 
+const idleInterval = 100 * time.Millisecond // 10 fps when nothing happens
+
 // serve runs one session on c. Every write goes through one lock: a protocol.Write
 // may take several conn writes (tsnet's conn can interleave them), so frame,
 // pong and clipboard writers must not overlap.
@@ -178,6 +181,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 	}
 	win := newWindow(o.window)
 	wake := make(chan struct{}, 1) // input arrived: skip the pacing wait
+	var lastInput atomic.Int64     // unix nano of last injected input; written by the reader
 
 	go func() { // screen: capture, encode and send one batch, pipelined up to o.window unacked batches
 		defer wg.Done()
@@ -186,13 +190,14 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		var tGrab, tScale, tEnc, tWrite, tAck time.Duration
 		var frames, skipped, bytesSent int
 		since := time.Now()
+		lastChange := since // frame loop only; starts active so the first second is full rate
 		for {
 			wait := time.Now()
 			if !win.acquire(done) {
 				return
 			}
 			tAck += time.Since(wait)
-			if d := time.Until(last.Add(o.interval)); d > 0 {
+			if d := time.Until(last.Add(frameInterval(time.Now(), time.Unix(0, lastInput.Load()), lastChange, o.interval, idleInterval))); d > 0 {
 				select {
 				case <-done:
 					return
@@ -237,6 +242,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			}
 			copy(prev.Pix, cur.Pix)
 			t = time.Now()
+			lastChange = time.Now()
 			win.add(len(fs)) // one batch, before the writes: an Ack can beat us back
 			for _, f := range fs {
 				if write(f) != nil {
@@ -301,6 +307,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		default:
 			inj.Apply(m)
 			if isInput(m) {
+				lastInput.Store(time.Now().UnixNano())
 				notify(wake)
 			}
 		}

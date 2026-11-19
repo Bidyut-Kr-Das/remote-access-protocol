@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"time"
 
 	"rap/internal/protocol"
 )
@@ -69,4 +70,12 @@ func isInput(m protocol.Msg) bool {
 		return true
 	}
 	return false
+}
+
+// frameInterval is idle once neither input nor a screen change was seen for over 1 s, else active.
+func frameInterval(now, lastInput, lastChange time.Time, active, idle time.Duration) time.Duration {
+	if now.Sub(lastInput) > time.Second && now.Sub(lastChange) > time.Second {
+		return idle
+	}
+	return active
 }
