@@ -68,3 +68,62 @@ func TestEncodeSubImageHeader(t *testing.T) {
 		t.Fatalf("%+v %v", f, err)
 	}
 }
+
+func TestDiffRects(t *testing.T) {
+	const w, h = 200, 150
+	mk := func(pts ...image.Point) *image.RGBA {
+		m := image.NewRGBA(image.Rect(0, 0, w, h))
+		for _, p := range pts {
+			m.Pix[p.Y*m.Stride+4*p.X] = 9
+		}
+		return m
+	}
+	for _, c := range []struct {
+		name string
+		b    *image.RGBA
+		want []image.Rectangle
+	}{
+		{"identical", mk(), nil},
+		{"single", mk(image.Pt(10, 10)), []image.Rectangle{image.Rect(0, 0, 64, 64)}},
+		{"bottom edge clamped", mk(image.Pt(10, 10), image.Pt(190, 140)),
+			[]image.Rectangle{image.Rect(0, 0, 64, 64), image.Rect(128, 128, 192, 150)}},
+		{"right edge clamped", mk(image.Pt(195, 10)), []image.Rectangle{image.Rect(192, 0, 200, 64)}},
+		{"adjacent merged", mk(image.Pt(60, 10), image.Pt(70, 10)), []image.Rectangle{image.Rect(0, 0, 128, 64)}},
+	} {
+		got := DiffRects(mk(), c.b, 64, 32)
+		if len(got) != len(c.want) {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%s: got %v want %v", c.name, got, c.want)
+				break
+			}
+		}
+	}
+}
+
+func TestDiffRectsFallsBackOnRectCount(t *testing.T) {
+	a, b := image.NewRGBA(image.Rect(0, 0, 640, 512)), image.NewRGBA(image.Rect(0, 0, 640, 512))
+	for ty := 0; ty < 8; ty++ { // checkerboard: 40 single-tile runs, exactly 50% area
+		for tx := ty % 2; tx < 10; tx += 2 {
+			b.Pix[(ty*64+5)*b.Stride+4*(tx*64+5)] = 9
+		}
+	}
+	if got := DiffRects(a, b, 64, 32); len(got) != 1 || got[0] != DiffRect(a, b) {
+		t.Fatalf("got %v want [%v]", got, DiffRect(a, b))
+	}
+}
+
+func TestDiffRectsFallsBackWhenMostlyDirty(t *testing.T) {
+	a, b := image.NewRGBA(image.Rect(0, 0, 200, 150)), image.NewRGBA(image.Rect(0, 0, 200, 150))
+	for _, y := range []int{10, 70} { // two full tile rows: 25600 of 30000 px
+		for _, x := range []int{10, 70, 130, 195} {
+			b.Pix[y*b.Stride+4*x] = 9
+		}
+	}
+	if got := DiffRects(a, b, 64, 32); len(got) != 1 || got[0] != DiffRect(a, b) {
+		t.Fatalf("got %v want [%v]", got, DiffRect(a, b))
+	}
+}

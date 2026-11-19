@@ -95,3 +95,43 @@ func DiffRect(a, b *image.RGBA) image.Rectangle {
 	}
 	return image.Rect(x0&^15, top&^15, min((x1+16)&^15, w), min((bot+16)&^15, h))
 }
+
+// DiffRects returns the changed tile x tile cells between a and b (same bounds, Min 0,0), with
+// horizontally adjacent dirty tiles merged into one rect and edges clamped to the image. Falls
+// back to the single DiffRect box when there would be more than maxRects rects or more than half
+// the image is dirty. Empty if identical.
+func DiffRects(a, b *image.RGBA, tile, maxRects int) []image.Rectangle {
+	w, h := a.Rect.Dx(), a.Rect.Dy()
+	dirty := func(x0, y0, x1, y1 int) bool {
+		for y := y0; y < y1; y++ {
+			o := y*a.Stride + 4*x0
+			if !bytes.Equal(a.Pix[o:o+4*(x1-x0)], b.Pix[o:o+4*(x1-x0)]) {
+				return true
+			}
+		}
+		return false
+	}
+	var rs []image.Rectangle
+	area := 0
+	for y0 := 0; y0 < h; y0 += tile {
+		y1 := min(y0+tile, h)
+		run := -1 // start x of the current dirty run
+		// one step past the edge closes a trailing run
+		for x0 := 0; x0 < w+tile; x0 += tile {
+			if x0 < w && dirty(x0, y0, min(x0+tile, w), y1) {
+				if run < 0 {
+					run = x0
+				}
+				continue
+			}
+			if run >= 0 {
+				r := image.Rect(run, y0, min(x0, w), y1)
+				rs, area, run = append(rs, r), area+r.Dx()*r.Dy(), -1
+				if len(rs) > maxRects || 2*area > w*h {
+					return []image.Rectangle{DiffRect(a, b)}
+				}
+			}
+		}
+	}
+	return rs
+}

@@ -98,9 +98,14 @@ func (g *game) start() {
 				if img, err := jpeg.Decode(bytes.NewReader(m.Data)); err == nil {
 					x, y := int(m.X), int(m.Y)
 					g.mu.Lock()
-					if b := g.backing.Rect; !g.gotFrame || (x == 0 && y == 0 && (int(m.W) > b.Dx() || int(m.H) > b.Dy())) {
-						g.backing = image.NewRGBA(image.Rect(0, 0, int(m.W), int(m.H))) // first frame is full
-						g.img = ebiten.NewImage(int(m.W), int(m.H))
+					if b := g.backing.Rect; needRealloc(b, x, y, int(m.W), int(m.H), g.gotFrame) {
+						// first frame is full, at (0,0); the host also sends a full frame on any resize
+						nw, nh := x+int(m.W), y+int(m.H)
+						if g.gotFrame {
+							nw, nh = max(nw, b.Dx()), max(nh, b.Dy())
+						}
+						g.backing = image.NewRGBA(image.Rect(0, 0, nw, nh))
+						g.img = ebiten.NewImage(nw, nh)
 					}
 					g.gotFrame = true
 					draw.Draw(g.backing, image.Rect(x, y, x+int(m.W), y+int(m.H)), img, image.Point{}, draw.Src)
@@ -224,4 +229,10 @@ func (g *game) Draw(dst *ebiten.Image) {
 func (g *game) Layout(ow, oh int) (int, int) {
 	g.ww, g.wh = ow, oh
 	return ow, oh
+}
+
+// needRealloc reports whether backing b must be reallocated before drawing a w x h rect at (x,y):
+// no frame yet, or the rect extends past b. Never shrinks: a (0,0) tile looks like a small full frame.
+func needRealloc(b image.Rectangle, x, y, w, h int, got bool) bool {
+	return !got || x+w > b.Dx() || y+h > b.Dy()
 }

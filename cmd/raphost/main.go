@@ -209,35 +209,43 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			t := time.Now()
 			cur := capture.Scale(img, o.maxW, &scaled)
 			tScale += time.Since(t)
-			var out image.Image = cur
+			rects := []image.Rectangle{cur.Rect} // full frame whenever size changed
 			if prev != nil && prev.Rect == cur.Rect {
-				r := capture.DiffRect(prev, cur)
-				if r.Empty() { // unchanged: nothing sent, so no Ack will come
+				rects = capture.DiffRects(prev, cur, 64, 32)
+				if len(rects) == 0 { // unchanged: nothing sent, so no Ack will come
 					skipped++
 					continue
 				}
-				out = cur.SubImage(r)
 			}
-			// prev must be a copy: cur may be the reused scaled buffer. Full frame whenever size changed.
+			// prev must be a copy: cur may be the reused scaled buffer.
 			if prev == nil || prev.Rect != cur.Rect {
 				prev = image.NewRGBA(cur.Rect)
 			}
 			t = time.Now()
-			f, err := capture.Encode(out, o.quality)
+			fs := make([]*protocol.Frame, 0, len(rects))
+			for _, r := range rects {
+				f, err := capture.Encode(cur.SubImage(r), o.quality)
+				if err != nil {
+					break
+				}
+				fs = append(fs, f)
+			}
 			tEnc += time.Since(t)
-			if err != nil {
+			if len(fs) < len(rects) {
 				prev = nil // force a full frame next time
 				continue
 			}
 			copy(prev.Pix, cur.Pix)
 			t = time.Now()
-			win.add(1) // before the write: the Ack can beat us back
-			if write(f) != nil {
-				stop()
-				return
+			win.add(len(fs)) // before the writes: an Ack can beat us back; one Ack per Frame message
+			for _, f := range fs {
+				if write(f) != nil {
+					stop()
+					return
+				}
+				bytesSent += len(f.Data)
 			}
 			tWrite += time.Since(t)
-			bytesSent += len(f.Data)
 			frames++
 			if el := time.Since(since); el >= 2*time.Second {
 				n := time.Duration(max(frames, 1))
