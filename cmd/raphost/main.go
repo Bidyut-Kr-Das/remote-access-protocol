@@ -36,14 +36,15 @@ func run(args []string) int {
 	maxW := fs.Int("maxw", 1280, "downscale the stream to at most this width (0 = no scaling)")
 	fps := fs.Int("fps", 30, "maximum frames per second")
 	quality := fs.Int("quality", 55, "JPEG quality 1-100")
+	win := fs.Int("window", 3, "frames in flight before waiting for viewer acks (1 = stop-and-wait)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *fps < 1 || *quality < 1 || *quality > 100 || *maxW < 0 {
-		fmt.Fprintln(os.Stderr, "raphost: invalid -fps, -quality or -maxw")
+	if *fps < 1 || *quality < 1 || *quality > 100 || *maxW < 0 || *win < 1 {
+		fmt.Fprintln(os.Stderr, "raphost: invalid -fps, -quality, -maxw or -window")
 		return 2
 	}
-	o := streamOpts{maxW: *maxW, interval: time.Second / time.Duration(*fps), quality: *quality}
+	o := streamOpts{maxW: *maxW, interval: time.Second / time.Duration(*fps), quality: *quality, window: *win}
 	if o.maxW == 0 {
 		o.maxW = 1 << 16
 	}
@@ -157,6 +158,7 @@ const ioTimeout = 15 * time.Second
 type streamOpts struct {
 	maxW, quality int
 	interval      time.Duration
+	window        int
 }
 
 func serve(c net.Conn, w, h uint16, o streamOpts) {
@@ -174,26 +176,21 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		c.SetWriteDeadline(time.Now().Add(ioTimeout)) // fresh per write; any error ends the session
 		return protocol.Write(c, m)
 	}
-	ack := make(chan struct{}, 1)
+	win := newWindow(o.window)
 
-	go func() { // screen: capture, encode and send one frame, then wait for the viewer's Ack
+	go func() { // screen: capture, encode and send one frame, pipelined up to o.window unacked
 		defer wg.Done()
 		var last time.Time
-		needAck := false
 		var scaled, prev *image.RGBA
 		var tGrab, tScale, tEnc, tWrite, tAck time.Duration
 		var frames, skipped, bytesSent int
 		since := time.Now()
 		for {
-			if needAck {
-				t := time.Now()
-				select {
-				case <-done:
-					return
-				case <-ack:
-				}
-				tAck += time.Since(t)
+			wait := time.Now()
+			if !win.acquire(done) {
+				return
 			}
+			tAck += time.Since(wait)
 			if d := time.Until(last.Add(o.interval)); d > 0 {
 				select {
 				case <-done:
@@ -205,7 +202,6 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			img, err := capture.Grab()
 			tGrab += time.Since(last)
 			if err != nil {
-				needAck = false
 				continue // e.g. secure desktop; retry after the interval
 			}
 			t := time.Now()
@@ -216,7 +212,6 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 				r := capture.DiffRect(prev, cur)
 				if r.Empty() { // unchanged: nothing sent, so no Ack will come
 					skipped++
-					needAck = false
 					continue
 				}
 				out = cur.SubImage(r)
@@ -229,12 +224,12 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			f, err := capture.Encode(out, o.quality)
 			tEnc += time.Since(t)
 			if err != nil {
-				needAck = false
 				prev = nil // force a full frame next time
 				continue
 			}
 			copy(prev.Pix, cur.Pix)
 			t = time.Now()
+			win.add(1) // before the write: the Ack can beat us back
 			if write(f) != nil {
 				stop()
 				return
@@ -242,7 +237,6 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			tWrite += time.Since(t)
 			bytesSent += len(f.Data)
 			frames++
-			needAck = true
 			if el := time.Since(since); el >= 2*time.Second {
 				n := time.Duration(max(frames, 1))
 				log.Printf("stream: %.1f fps %.0f KB/s grab %v scale %v enc %v write %v ack %v skipped %d",
@@ -275,10 +269,7 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		case protocol.Ping:
 			write(protocol.Pong{})
 		case protocol.Ack:
-			select {
-			case ack <- struct{}{}:
-			default:
-			}
+			win.ack()
 		case protocol.Clipboard:
 			clip.Apply(m.Text)
 		default:
