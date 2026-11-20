@@ -5,6 +5,8 @@ go 1.27.3
 require (
 	github.com/hajimehoshi/ebiten/v2 v2.10.5
 	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018
+	github.com/kirides/go-d3d v1.0.1
+	golang.org/x/image v0.48.0
 	golang.org/x/sys v0.50.0
 	tailscale.com v1.104.5
 )
@@ -21,7 +23,7 @@ require (
 	github.com/ebitengine/purego v0.11.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/gaissmai/bart v0.29.0 // indirect
-	github.com/gen2brain/shm v0.1.0 // indirect
+	github.com/gen2brain/shm v0.1.1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
@@ -49,7 +51,6 @@ require (
 	go4.org/netipx v0.0.0-20260823151212-3075585bcbeb // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
-	golang.org/x/image v0.48.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect

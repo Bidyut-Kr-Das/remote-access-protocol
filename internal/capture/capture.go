@@ -6,6 +6,9 @@ import (
 	"errors"
 	"image"
 	"image/jpeg"
+	"log"
+	"sync"
+	"time"
 
 	"github.com/kbinani/screenshot"
 	xdraw "golang.org/x/image/draw"
@@ -29,8 +32,70 @@ func ScreenSize() (w, h uint16, err error) {
 	return dims(screenshot.GetDisplayBounds(0))
 }
 
-// Grab captures the primary display.
-func Grab() (*image.RGBA, error) { return screenshot.CaptureDisplay(0) }
+// dxgiGrabber is a DXGI desktop duplicator for display 0 (dxgi_windows.go fills it in).
+type dxgiGrabber struct {
+	rect  image.Rectangle
+	frame func(dst *image.RGBA) error // errNoNewFrame when nothing changed since the last call
+	close func()
+}
+
+func (g *dxgiGrabber) grab(dst *image.RGBA) error { return g.frame(dst) }
+
+var errNoNewFrame = errors.New("capture: no new DXGI frame")
+
+const dxgiRetryEvery = 2 * time.Second
+
+// Test seams.
+var (
+	newDXGIFn = newDXGI
+	gdiGrab   = func() (*image.RGBA, error) { return screenshot.CaptureDisplay(0) }
+	now       = time.Now
+)
+
+var (
+	dxgiMu    sync.Mutex
+	dxgi      *dxgiGrabber
+	dxgiBuf   *image.RGBA // holds the last DXGI frame
+	dxgiOK    bool        // dxgiBuf holds a frame from the current dxgi
+	dxgiRetry time.Time   // no DXGI init before this
+)
+
+// Grab captures the primary display, through DXGI Desktop Duplication when it works and GDI
+// otherwise (UAC/secure desktop, lock screen, unsupported GPU), retrying DXGI at most every 2 s.
+// A DXGI result is the same reused buffer every call: valid only until the next Grab.
+func Grab() (*image.RGBA, error) {
+	dxgiMu.Lock()
+	defer dxgiMu.Unlock()
+	if dxgi == nil && !now().Before(dxgiRetry) {
+		g, err := newDXGIFn()
+		if err != nil {
+			log.Printf("capture: DXGI unavailable, using GDI: %v", err)
+			dxgiRetry = now().Add(dxgiRetryEvery)
+		} else {
+			log.Print("capture: using DXGI")
+			dxgi, dxgiOK = g, false
+			if dxgiBuf == nil || dxgiBuf.Rect != g.rect {
+				dxgiBuf = image.NewRGBA(g.rect) // GetImage needs a buffer of the exact output size
+			}
+		}
+	}
+	if dxgi != nil {
+		switch err := dxgi.grab(dxgiBuf); {
+		case err == nil:
+			dxgiOK = true
+			return dxgiBuf, nil
+		case errors.Is(err, errNoNewFrame):
+			if dxgiOK { // still screen: dxgiBuf already holds the current image
+				return dxgiBuf, nil
+			}
+		default:
+			log.Printf("capture: DXGI lost, using GDI: %v", err)
+			dxgi.close()
+			dxgi, dxgiRetry = nil, now().Add(dxgiRetryEvery)
+		}
+	}
+	return gdiGrab()
+}
 
 // Encode JPEG-encodes img as a frame (Codec 1) placed at img's bounds (a SubImage keeps its Min).
 func Encode(img image.Image, quality int) (*protocol.Frame, error) {

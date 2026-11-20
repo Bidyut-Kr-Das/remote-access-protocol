@@ -2,10 +2,12 @@ package capture
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"testing"
+	"time"
 )
 
 func TestEncodeProducesDecodableJPEG(t *testing.T) {
@@ -144,5 +146,82 @@ func TestEncodeToReusesBuffer(t *testing.T) {
 	}
 	if caps[0] != caps[1] {
 		t.Errorf("buf.Cap changed: %d -> %d", caps[0], caps[1])
+	}
+}
+
+func TestGrabFallsBackToGDI(t *testing.T) {
+	type step struct {
+		at    time.Duration // fake clock offset
+		ctor  error         // result of newDXGIFn if Grab calls it
+		frame error         // result of the DXGI frame copy if Grab calls it
+		want  string        // "dxgi" or "gdi"
+		inits int           // total newDXGIFn calls after this step
+		rels  int           // total releases after this step
+	}
+	fail := errors.New("boom")
+	for _, c := range []struct {
+		name  string
+		steps []step
+	}{
+		{"init fails, retry throttled to 2s", []step{
+			{0, fail, nil, "gdi", 1, 0},
+			{time.Second, nil, nil, "gdi", 1, 0},
+			{2 * time.Second, nil, nil, "dxgi", 2, 0},
+		}},
+		{"still screen serves cached frame", []step{
+			{0, nil, nil, "dxgi", 1, 0},
+			{time.Second, nil, errNoNewFrame, "dxgi", 1, 0},
+		}},
+		{"no frame yet uses GDI and keeps DXGI", []step{
+			{0, nil, errNoNewFrame, "gdi", 1, 0},
+			{time.Millisecond, nil, nil, "dxgi", 1, 0},
+		}},
+		{"frame error releases, GDI until 2s", []step{
+			{0, nil, nil, "dxgi", 1, 0},
+			{time.Second, nil, fail, "gdi", 1, 1},
+			{2 * time.Second, nil, nil, "gdi", 1, 1},
+			{3 * time.Second, nil, errNoNewFrame, "gdi", 2, 1}, // re-init must not serve the stale pre-loss frame
+			{3*time.Second + time.Millisecond, nil, nil, "dxgi", 2, 1},
+		}},
+	} {
+		t0 := time.Unix(1000, 0)
+		var clock time.Time
+		var cur step
+		inits, rels := 0, 0
+		rect := image.Rect(0, 0, 8, 4)
+		gdiImg := image.NewRGBA(rect)
+		oldNew, oldGDI, oldNow := newDXGIFn, gdiGrab, now
+		newDXGIFn = func() (*dxgiGrabber, error) {
+			inits++
+			if cur.ctor != nil {
+				return nil, cur.ctor
+			}
+			return &dxgiGrabber{rect: rect,
+				frame: func(dst *image.RGBA) error {
+					if cur.frame == nil {
+						dst.Pix[0] = 7
+					}
+					return cur.frame
+				},
+				close: func() { rels++ }}, nil
+		}
+		gdiGrab = func() (*image.RGBA, error) { return gdiImg, nil }
+		now = func() time.Time { return clock }
+		dxgi, dxgiOK, dxgiRetry, dxgiBuf = nil, false, time.Time{}, nil
+		for i, s := range c.steps {
+			cur, clock = s, t0.Add(s.at)
+			img, err := Grab()
+			got := "dxgi"
+			if img == gdiImg {
+				got = "gdi"
+			} else if err != nil || img.Rect != rect || img.Pix[0] != 7 {
+				t.Fatalf("%s step %d: bad DXGI image %v err %v", c.name, i, img, err)
+			}
+			if got != s.want || inits != s.inits || rels != s.rels {
+				t.Errorf("%s step %d: got %s inits %d rels %d, want %s %d %d", c.name, i, got, inits, rels, s.want, s.inits, s.rels)
+			}
+		}
+		newDXGIFn, gdiGrab, now = oldNew, oldGDI, oldNow
+		dxgi, dxgiOK, dxgiRetry, dxgiBuf = nil, false, time.Time{}, nil
 	}
 }
