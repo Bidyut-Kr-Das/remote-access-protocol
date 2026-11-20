@@ -29,6 +29,15 @@ const (
 	Version      byte = 2 // 2: frames are scaled sub-rects, not full host-size
 )
 
+// Codec IDs go in Frame.Codec and OK.Codec; Codecs* are Hello bitmask bits (bit = 1<<(ID-1)).
+// The two sets coincide numerically for JPEG/H264 but are different kinds: never mix them.
+const (
+	CodecJPEG  byte = 1
+	CodecH264  byte = 2
+	CodecsJPEG byte = 1 << 0
+	CodecsH264 byte = 1 << 1
+)
+
 var (
 	ErrOversize    = errors.New("protocol: message too large")
 	ErrUnknownType = errors.New("protocol: unknown message type")
@@ -44,8 +53,12 @@ type Challenge struct{ Nonce [32]byte }
 type Hello struct {
 	Version byte
 	Hash    [32]byte
+	Codecs  byte // optional trailing byte: codecs the viewer decodes; 0 = absent (old viewer, JPEG only)
 }
-type OK struct{ W, H uint16 }
+type OK struct {
+	W, H  uint16
+	Codec byte // optional trailing byte: codec the host chose; 0 = absent (old host, JPEG)
+}
 type Deny struct{}
 type Frame struct {
 	X, Y, W, H uint16
@@ -87,9 +100,19 @@ func (Clipboard) Type() byte   { return TypeClipboard }
 var be = binary.BigEndian
 
 func (m Challenge) Marshal() []byte { return m.Nonce[:] }
-func (m Hello) Marshal() []byte     { return append([]byte{m.Version}, m.Hash[:]...) }
-func (m OK) Marshal() []byte        { return be.AppendUint16(be.AppendUint16(nil, m.W), m.H) }
-func (Deny) Marshal() []byte        { return nil }
+func (m Hello) Marshal() []byte     { return appendOpt(append([]byte{m.Version}, m.Hash[:]...), m.Codecs) }
+func (m OK) Marshal() []byte {
+	return appendOpt(be.AppendUint16(be.AppendUint16(nil, m.W), m.H), m.Codec)
+}
+func (Deny) Marshal() []byte { return nil }
+
+// appendOpt appends an optional trailing byte; 0 is left off so old-format bytes stay identical.
+func appendOpt(b []byte, v byte) []byte {
+	if v == 0 {
+		return b
+	}
+	return append(b, v)
+}
 func (m Frame) Marshal() []byte {
 	b := make([]byte, 0, 9+len(m.Data))
 	for _, v := range []uint16{m.X, m.Y, m.W, m.H} {

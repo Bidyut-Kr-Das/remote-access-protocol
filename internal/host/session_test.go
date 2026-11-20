@@ -38,7 +38,7 @@ func join(t *testing.T, m *Manager, ln net.Listener) (ok bool, cerr error) {
 		defer close(done)
 		ok = m.Accept(sc)
 	}()
-	_, _, cerr = protocol.ClientHandshake(c, pw)
+	_, _, _, cerr = protocol.ClientHandshake(c, pw, protocol.CodecsJPEG)
 	<-done
 	return
 }

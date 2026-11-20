@@ -85,7 +85,7 @@ func run(args []string) int {
 		return 2
 	}
 	c.SetDeadline(time.Now().Add(10 * time.Second)) // a silent host must not hang startup
-	w, h, err := protocol.ClientHandshake(c, *pw)
+	w, h, _, err := protocol.ClientHandshake(c, *pw, protocol.CodecsJPEG) // shortcut: JPEG-only until the H.264 decoder lands (Task 6c)
 	if err != nil {
 		c.Close()
 		fmt.Fprintln(os.Stderr, "rapview:", err)

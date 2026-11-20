@@ -32,7 +32,7 @@ func (m *Manager) Accept(c net.Conn) bool {
 	}
 	c.SetReadDeadline(time.Now().Add(m.timeout)) // silent peer must not hold us forever
 	claimed := false
-	err = protocol.ServerHandshake(c, ip, m.password, m.lim, func() (uint16, uint16, bool) {
+	_, err = protocol.ServerHandshake(c, ip, m.password, m.lim, protocol.CodecsJPEG, func() (uint16, uint16, bool) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if m.active {

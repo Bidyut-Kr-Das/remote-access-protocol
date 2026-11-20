@@ -61,12 +61,19 @@ func unmarshal(t byte, p []byte) (Msg, error) {
 		}
 		m := Hello{Version: p[0]}
 		copy(m.Hash[:], p[1:])
+		if len(p) > 33 {
+			m.Codecs = p[33]
+		}
 		return m, nil
 	case TypeOK:
 		if err := need(4); err != nil {
 			return nil, err
 		}
-		return OK{be.Uint16(p), be.Uint16(p[2:])}, nil
+		m := OK{W: be.Uint16(p), H: be.Uint16(p[2:])}
+		if len(p) > 4 {
+			m.Codec = p[4]
+		}
+		return m, nil
 	case TypeDeny:
 		return Deny{}, nil
 	case TypeFrame:

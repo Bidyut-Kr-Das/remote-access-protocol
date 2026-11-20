@@ -13,7 +13,7 @@ func okAccept() (uint16, uint16, bool) { return 1920, 1080, true }
 func runServer(t *testing.T, c net.Conn, ip, password string, lim *Limiter, acc func() (uint16, uint16, bool)) chan error {
 	t.Helper()
 	ch := make(chan error, 1)
-	go func() { ch <- ServerHandshake(c, ip, password, lim, acc) }()
+	go func() { _, err := ServerHandshake(c, ip, password, lim, CodecsJPEG, acc); ch <- err }()
 	return ch
 }
 
@@ -26,7 +26,7 @@ func TestHandshakeOK(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 	res := runServer(t, s, "1.1.1.1", pw, newLim(), okAccept)
-	w, h, err := ClientHandshake(c, pw)
+	w, h, _, err := ClientHandshake(c, pw, CodecsJPEG)
 	if err != nil || w != 1920 || h != 1080 {
 		t.Fatalf("client: %d %d %v", w, h, err)
 	}
@@ -40,7 +40,7 @@ func TestHandshakeWrongPassword(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 	res := runServer(t, s, "1.1.1.1", pw, newLim(), okAccept)
-	_, _, err := ClientHandshake(c, "x")
+	_, _, _, err := ClientHandshake(c, "x", CodecsJPEG)
 	if err != ErrDenied {
 		t.Fatalf("client err %v", err)
 	}
@@ -79,7 +79,7 @@ func TestHandshakeAcceptRejects(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		s, c := net.Pipe()
 		res := runServer(t, s, "1.1.1.1", pw, lim, func() (uint16, uint16, bool) { return 0, 0, false })
-		if _, _, err := ClientHandshake(c, pw); err != ErrDenied {
+		if _, _, _, err := ClientHandshake(c, pw, CodecsJPEG); err != ErrDenied {
 			t.Fatalf("client err %v", err)
 		}
 		if err := <-res; err != ErrDenied {
@@ -123,7 +123,7 @@ func TestHandshakeBlockedIP(t *testing.T) {
 	}
 	s, c := net.Pipe()
 	defer c.Close()
-	err := ServerHandshake(s, "1.1.1.1", pw, lim, okAccept)
+	_, err := ServerHandshake(s, "1.1.1.1", pw, lim, CodecsJPEG, okAccept)
 	if err != ErrDenied {
 		t.Fatalf("err %v", err)
 	}
@@ -153,7 +153,7 @@ func attempt(t *testing.T, lim *Limiter, password string, badVer bool) error {
 			t.Fatal(err)
 		}
 	} else {
-		ClientHandshake(c, password)
+		ClientHandshake(c, password, CodecsJPEG)
 	}
 	return <-res
 }
