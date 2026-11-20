@@ -22,6 +22,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"rap/internal/h264"
 	"rap/internal/protocol"
 
 	"tailscale.com/tsnet"
@@ -64,6 +65,10 @@ func run(args []string) int {
 		fs.Usage()
 		return 2
 	}
+	codecs := protocol.CodecsJPEG // probed before dialing: MF startup must not eat the handshake deadline
+	if h264.Available() {
+		codecs |= protocol.CodecsH264
+	}
 	addr := net.JoinHostPort(*host, strconv.Itoa(*port))
 	var c net.Conn
 	var err error
@@ -85,7 +90,8 @@ func run(args []string) int {
 		return 2
 	}
 	c.SetDeadline(time.Now().Add(10 * time.Second)) // a silent host must not hang startup
-	w, h, _, err := protocol.ClientHandshake(c, *pw, protocol.CodecsJPEG) // shortcut: JPEG-only until the H.264 decoder lands (Task 6c)
+	// The chosen codec is not needed: frames are decoded by Frame.Codec (the host may fall back to JPEG).
+	w, h, _, err := protocol.ClientHandshake(c, *pw, codecs)
 	if err != nil {
 		c.Close()
 		fmt.Fprintln(os.Stderr, "rapview:", err)

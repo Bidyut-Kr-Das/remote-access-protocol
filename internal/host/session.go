@@ -23,16 +23,17 @@ func NewManager(password string, w, h uint16, lim *protocol.Limiter, timeout tim
 	return &Manager{password: password, w: w, h: h, lim: lim, timeout: timeout}
 }
 
-// Accept runs the handshake on c and claims the session slot. Denied or timed-out conns are closed.
-func (m *Manager) Accept(c net.Conn) bool {
+// Accept runs the handshake on c, offering codecs (protocol.Codecs* mask), and claims the session
+// slot. It returns the codec chosen for the session. Denied or timed-out conns are closed.
+func (m *Manager) Accept(c net.Conn, codecs byte) (codec byte, ok bool) {
 	ip, _, err := net.SplitHostPort(c.RemoteAddr().String())
 	if err != nil {
 		c.Close()
-		return false
+		return 0, false
 	}
 	c.SetReadDeadline(time.Now().Add(m.timeout)) // silent peer must not hold us forever
 	claimed := false
-	_, err = protocol.ServerHandshake(c, ip, m.password, m.lim, protocol.CodecsJPEG, func() (uint16, uint16, bool) {
+	codec, err = protocol.ServerHandshake(c, ip, m.password, m.lim, codecs, func() (uint16, uint16, bool) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if m.active {
@@ -46,10 +47,10 @@ func (m *Manager) Accept(c net.Conn) bool {
 		if claimed { // OK write failed after the slot was taken
 			m.End()
 		}
-		return false
+		return 0, false
 	}
 	c.SetReadDeadline(time.Time{})
-	return true
+	return codec, true
 }
 
 // End clears the active session so a new one may start.

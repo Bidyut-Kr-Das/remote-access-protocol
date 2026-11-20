@@ -15,6 +15,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
 	"rap/internal/clipboard"
+	"rap/internal/h264"
 	"rap/internal/protocol"
 	"rap/internal/view"
 )
@@ -36,9 +37,13 @@ type game struct {
 	backing  *image.RGBA // frame space (scaled host screen); sized by the first frame
 	gotFrame bool
 	dirty    image.Rectangle // union of blits since the last Draw; empty if none
-	full     bool            // img was recreated: upload all of backing
+	full     bool            // backing was recreated: Draw resizes img and uploads all of backing
 	scratch  []byte          // reused dirty-rect upload buffer
-	img      *ebiten.Image
+	img      *ebiten.Image   // Draw only
+
+	// Reader goroutine only.
+	dec         *h264.Decoder // created on the first H.264 frame
+	warnedCodec bool
 
 	dead      atomic.Bool
 	closeOnce sync.Once
@@ -59,6 +64,63 @@ type game struct {
 func newGame(conn net.Conn, w, h int) *game {
 	return &game{conn: conn, w: w, h: h, captured: true, backing: image.NewRGBA(image.Rect(0, 0, w, h)),
 		img: ebiten.NewImage(w, h), clipDone: make(chan struct{}), clip: clipboard.New()}
+}
+
+// frame decodes one Frame into backing and acks it. A bad or unknown frame is not fatal,
+// but still acked so the host's window keeps flowing. Reader goroutine only.
+func (g *game) frame(m protocol.Frame) {
+	defer g.send(protocol.Ack{})
+	var img image.Image
+	switch m.Codec {
+	case protocol.CodecJPEG:
+		var err error
+		if img, err = jpeg.Decode(bytes.NewReader(m.Data)); err != nil {
+			return
+		}
+	case protocol.CodecH264:
+		var err error
+		if g.dec == nil {
+			if g.dec, err = h264.NewDecoder(); err != nil {
+				log.Printf("h264: %v", err)
+				return
+			}
+		}
+		rgba, err := g.dec.Decode(m.Data, int(m.W), int(m.H))
+		if err != nil {
+			// shortcut: no keyframe request; the host sends an IDR only on resize, so the picture
+			// may stay stale or broken until then. Add a keyframe-request message if this shows up.
+			log.Printf("h264: decode failed, dropping decoder (picture may be wrong until the next resize or reconnect): %v", err)
+			g.dec.Close()
+			g.dec = nil
+			return
+		}
+		if rgba == nil {
+			return
+		}
+		img = rgba
+	default:
+		if !g.warnedCodec {
+			g.warnedCodec = true
+			log.Printf("ignoring frames with unknown codec %d", m.Codec)
+		}
+		return
+	}
+	x, y := int(m.X), int(m.Y)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if b := g.backing.Rect; needRealloc(b, x, y, int(m.W), int(m.H), g.gotFrame) {
+		// first frame is full, at (0,0); the host also sends a full frame on any resize
+		nw, nh := x+int(m.W), y+int(m.H)
+		if g.gotFrame {
+			nw, nh = max(nw, b.Dx()), max(nh, b.Dy())
+		}
+		g.backing = image.NewRGBA(image.Rect(0, 0, nw, nh))
+		g.full = true
+	}
+	g.gotFrame = true
+	r := image.Rect(x, y, x+int(m.W), y+int(m.H))
+	draw.Draw(g.backing, r, img, image.Point{}, draw.Src)
+	g.dirty = g.dirty.Union(r)
 }
 
 // fail marks the session dead and closes the conn (idempotent).
@@ -86,6 +148,7 @@ func (g *game) send(m protocol.Msg) {
 
 func (g *game) start() {
 	go func() { // reader
+		defer func() { g.dec.Close() }()
 		for {
 			g.conn.SetReadDeadline(time.Now().Add(ioTimeout)) // host pongs our 2 s pings
 			m, err := protocol.Read(g.conn)
@@ -96,27 +159,7 @@ func (g *game) start() {
 			}
 			switch m := m.(type) {
 			case protocol.Frame:
-				// A bad frame is not fatal, but still acked so the host keeps sending.
-				if img, err := jpeg.Decode(bytes.NewReader(m.Data)); err == nil {
-					x, y := int(m.X), int(m.Y)
-					g.mu.Lock()
-					if b := g.backing.Rect; needRealloc(b, x, y, int(m.W), int(m.H), g.gotFrame) {
-						// first frame is full, at (0,0); the host also sends a full frame on any resize
-						nw, nh := x+int(m.W), y+int(m.H)
-						if g.gotFrame {
-							nw, nh = max(nw, b.Dx()), max(nh, b.Dy())
-						}
-						g.backing = image.NewRGBA(image.Rect(0, 0, nw, nh))
-						g.img = ebiten.NewImage(nw, nh)
-						g.full = true
-					}
-					g.gotFrame = true
-					r := image.Rect(x, y, x+int(m.W), y+int(m.H))
-					draw.Draw(g.backing, r, img, image.Point{}, draw.Src)
-					g.dirty = g.dirty.Union(r)
-					g.mu.Unlock()
-				}
-				g.send(protocol.Ack{})
+				g.frame(m)
 			case protocol.Clipboard:
 				g.clip.Apply(m.Text)
 			}
@@ -217,6 +260,9 @@ func (g *game) Update() error {
 func (g *game) Draw(dst *ebiten.Image) {
 	g.mu.Lock()
 	if g.full {
+		if g.img.Bounds() != g.backing.Rect {
+			g.img = ebiten.NewImage(g.backing.Rect.Dx(), g.backing.Rect.Dy())
+		}
 		g.img.WritePixels(g.backing.Pix)
 		g.full, g.dirty = false, image.Rectangle{}
 	} else if r := g.dirty; !r.Empty() {

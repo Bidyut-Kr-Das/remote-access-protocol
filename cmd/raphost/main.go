@@ -20,6 +20,7 @@ import (
 
 	"rap/internal/capture"
 	"rap/internal/clipboard"
+	"rap/internal/h264"
 	"rap/internal/host"
 	"rap/internal/input"
 	"rap/internal/protocol"
@@ -39,14 +40,16 @@ func run(args []string) int {
 	fps := fs.Int("fps", 30, "target frames per second; input triggers an immediate frame")
 	quality := fs.Int("quality", 55, "JPEG quality 1-100")
 	win := fs.Int("window", 3, "frame batches in flight before waiting for viewer acks (1 = stop-and-wait)")
+	codec := fs.String("codec", "auto", "auto (H.264 when host and viewer support it, else JPEG) or jpeg")
+	bitrate := fs.Int("bitrate", 4000, "H.264 bitrate in kbps")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *fps < 1 || *quality < 1 || *quality > 100 || *maxW < 0 || *win < 1 {
-		fmt.Fprintln(os.Stderr, "raphost: invalid -fps, -quality, -maxw or -window")
+	if *fps < 1 || *quality < 1 || *quality > 100 || *maxW < 0 || *win < 1 || (*codec != "auto" && *codec != "jpeg") || *bitrate < 100 {
+		fmt.Fprintln(os.Stderr, "raphost: invalid -fps, -quality, -maxw, -window, -codec or -bitrate")
 		return 2
 	}
-	o := streamOpts{maxW: *maxW, interval: time.Second / time.Duration(*fps), quality: *quality, window: *win}
+	o := streamOpts{maxW: *maxW, fps: *fps, interval: time.Second / time.Duration(*fps), quality: *quality, window: *win, bitrate: *bitrate}
 	if o.maxW == 0 {
 		o.maxW = 1 << 16
 	}
@@ -59,6 +62,10 @@ func run(args []string) int {
 	if err != nil {
 		log.Print(err)
 		return 1
+	}
+	codecs := protocol.CodecsJPEG
+	if *codec == "auto" && h264.Available() {
+		codecs |= protocol.CodecsH264
 	}
 	mgr := host.NewManager(*pw, w, h, protocol.NewLimiter(3, 60*time.Second, time.Now), 5*time.Second)
 	var ln net.Listener
@@ -79,8 +86,8 @@ func run(args []string) int {
 			return 1
 		}
 		go func() {
-			if mgr.Accept(c) {
-				serve(c, w, h, o)
+			if codec, ok := mgr.Accept(c, codecs); ok {
+				serve(c, w, h, o, codec)
 				mgr.End()
 			}
 		}()
@@ -161,11 +168,15 @@ const idleInterval = 100 * time.Millisecond // 10 fps when nothing happens
 // pong and clipboard writers must not overlap.
 type streamOpts struct {
 	maxW, quality int
+	fps           int
 	interval      time.Duration
 	window        int
+	bitrate       int // H.264 kbps
 }
 
-func serve(c net.Conn, w, h uint16, o streamOpts) {
+// serve streams with codec (protocol.Codec*, chosen in the handshake). H.264 falls back to
+// JPEG tiles for the rest of the session if the encoder fails; the viewer decodes per Frame.Codec.
+func serve(c net.Conn, w, h uint16, o streamOpts, codec byte) {
 	ip, _, _ := net.SplitHostPort(c.RemoteAddr().String())
 	log.Printf("session started %s", ip)
 	done := make(chan struct{})
@@ -191,6 +202,10 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 		var tGrab, tScale, tEnc, tWrite, tAck time.Duration
 		var frames, rectsSent, skipped, bytesSent int
 		var bufs []*bytes.Buffer // one per rect of a batch: all encode before any write
+		var enc *h264.Encoder    // H.264 only; created here, used only on this goroutine
+		var encRect image.Rectangle
+		defer func() { enc.Close() }()
+		codecName := map[byte]string{protocol.CodecJPEG: "jpeg", protocol.CodecH264: "h264"}
 		since := time.Now()
 		lastChange := since // frame loop only; starts active so the first second is full rate
 		for {
@@ -230,18 +245,45 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			}
 			t = time.Now()
 			fs := make([]*protocol.Frame, 0, len(rects))
-			for i, r := range rects {
-				if i == len(bufs) {
-					bufs = append(bufs, new(bytes.Buffer))
+			if codec == protocol.CodecH264 {
+				// Whole frame per AU; a new encoder (first frame, resize) starts with an IDR.
+				var au []byte
+				var err error
+				if enc == nil || encRect != cur.Rect {
+					enc.Close()
+					enc, err = h264.NewEncoder(cur.Rect.Dx(), cur.Rect.Dy(), o.fps, o.bitrate)
+					encRect = cur.Rect
 				}
-				f, err := capture.EncodeTo(bufs[i], cur.SubImage(r), o.quality)
-				if err != nil {
-					break
+				if err == nil {
+					au, err = enc.Encode(cur)
 				}
-				fs = append(fs, f)
+				switch {
+				case err != nil:
+					log.Printf("h264: %v; falling back to JPEG for this session", err)
+					enc.Close()
+					enc, codec = nil, protocol.CodecJPEG
+					rects = []image.Rectangle{cur.Rect} // full frame: the viewer has only H.264 output so far
+				case len(au) == 0: // no output yet; prev is not updated, so the next capture re-encodes
+					tEnc += time.Since(t)
+					continue
+				default:
+					fs = append(fs, &protocol.Frame{W: uint16(cur.Rect.Dx()), H: uint16(cur.Rect.Dy()), Codec: protocol.CodecH264, Data: au})
+				}
+			}
+			if codec == protocol.CodecJPEG {
+				for i, r := range rects {
+					if i == len(bufs) {
+						bufs = append(bufs, new(bytes.Buffer))
+					}
+					f, err := capture.EncodeTo(bufs[i], cur.SubImage(r), o.quality)
+					if err != nil {
+						break
+					}
+					fs = append(fs, f)
+				}
 			}
 			tEnc += time.Since(t)
-			if len(fs) < len(rects) {
+			if len(fs) < len(rects) && codec == protocol.CodecJPEG {
 				prev = nil // force a full frame next time
 				continue
 			}
@@ -261,10 +303,10 @@ func serve(c net.Conn, w, h uint16, o streamOpts) {
 			frames++
 			if el := time.Since(since); el >= 2*time.Second {
 				n := time.Duration(max(frames, 1))
-				log.Printf("stream: %.1f fps %.1f rects/s %.0f KB/s grab %v scale %v enc %v write %v wait %v skipped %d",
+				log.Printf("stream: %.1f fps %.1f rects/s %.0f KB/s grab %v scale %v enc %v write %v wait %v skipped %d codec %s",
 					float64(frames)/el.Seconds(), float64(rectsSent)/el.Seconds(), float64(bytesSent)/1024/el.Seconds(),
 					(tGrab / n).Round(time.Millisecond), (tScale / n).Round(time.Millisecond), (tEnc / n).Round(time.Millisecond),
-					(tWrite / n).Round(time.Millisecond), (tAck / n).Round(time.Millisecond), skipped)
+					(tWrite / n).Round(time.Millisecond), (tAck / n).Round(time.Millisecond), skipped, codecName[codec])
 				tGrab, tScale, tEnc, tWrite, tAck, frames, rectsSent, skipped, bytesSent, since = 0, 0, 0, 0, 0, 0, 0, 0, 0, time.Now()
 			}
 		}
