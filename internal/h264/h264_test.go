@@ -211,3 +211,10 @@ func TestDesktop720p(t *testing.T) {
 }
 
 func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+
+func TestCloseNil(t *testing.T) {
+	var e *Encoder
+	e.Close()
+	var d *Decoder
+	d.Close()
+}

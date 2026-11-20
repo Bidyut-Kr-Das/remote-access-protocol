@@ -15,6 +15,10 @@ import (
 // com is a raw COM interface pointer; vtbl points at the method table.
 type com struct{ vtbl *[64]uintptr }
 
+// call is uintptrescapes so pointers passed as uintptr (out-params, VARIANTs)
+// are heap-allocated and kept alive for the duration of the COM call.
+//
+//go:uintptrescapes
 func (c *com) call(idx int, args ...uintptr) uintptr {
 	r, _, _ := syscall.SyscallN(c.vtbl[idx], append([]uintptr{uintptr(unsafe.Pointer(c))}, args...)...)
 	return r
@@ -134,7 +138,8 @@ func startup() error {
 		done := make(chan error)
 		go func() {
 			runtime.LockOSThread()
-			if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil {
+			// S_FALSE (1): this thread was already in the MTA.
+			if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil && err != syscall.Errno(1) {
 				done <- fmt.Errorf("h264: CoInitializeEx: %w", err)
 				return
 			}
@@ -192,17 +197,27 @@ func newType(sub *windows.GUID) (*com, error) {
 	if hr, _, _ := mfCreateType.Call(uintptr(unsafe.Pointer(&t))); failed(hr) {
 		return nil, hrErr("MFCreateMediaType", hr)
 	}
-	t.call(attrSetGUID, uintptr(unsafe.Pointer(&mtMajorType)), uintptr(unsafe.Pointer(&mediaTypeVideo)))
-	t.call(attrSetGUID, uintptr(unsafe.Pointer(&mtSubtype)), uintptr(unsafe.Pointer(sub)))
+	for _, kv := range [][2]*windows.GUID{{&mtMajorType, &mediaTypeVideo}, {&mtSubtype, sub}} {
+		if hr := t.call(attrSetGUID, uintptr(unsafe.Pointer(kv[0])), uintptr(unsafe.Pointer(kv[1]))); failed(hr) {
+			t.release()
+			return nil, hrErr("SetGUID", hr)
+		}
+	}
 	return t, nil
 }
 
-func setU32(a *com, key *windows.GUID, v uint32) {
-	a.call(attrSetUINT32, uintptr(unsafe.Pointer(key)), uintptr(v))
+func setU32(a *com, key *windows.GUID, v uint32) error {
+	if hr := a.call(attrSetUINT32, uintptr(unsafe.Pointer(key)), uintptr(v)); failed(hr) {
+		return hrErr("SetUINT32", hr)
+	}
+	return nil
 }
 
-func setU64(a *com, key *windows.GUID, hi, lo uint32) {
-	a.call(attrSetUINT64, uintptr(unsafe.Pointer(key)), uintptr(uint64(hi)<<32|uint64(lo)))
+func setU64(a *com, key *windows.GUID, hi, lo uint32) error {
+	if hr := a.call(attrSetUINT64, uintptr(unsafe.Pointer(key)), uintptr(uint64(hi)<<32|uint64(lo))); failed(hr) {
+		return hrErr("SetUINT64", hr)
+	}
+	return nil
 }
 
 // variant mirrors the 24-byte VARIANT on 64-bit Windows.
@@ -293,6 +308,7 @@ func pull(t *com, dst []byte) ([]byte, uintptr, error) {
 }
 
 // Encoder turns RGBA frames into H.264 Annex B access units.
+// It is not safe for concurrent use.
 type Encoder struct {
 	mft, api   *com
 	w, h       int
@@ -345,11 +361,15 @@ func (e *Encoder) init(kbps int) error {
 		return err
 	}
 	defer out.release()
-	setU32(out, &mtAvgBitrate, uint32(kbps*1000))
-	setU64(out, &mtFrameRate, uint32(e.fps), 1)
-	setU64(out, &mtFrameSize, uint32(e.pw), uint32(e.ph))
-	setU32(out, &mtInterlace, 2) // MFVideoInterlace_Progressive
-	setU32(out, &mtProfile, profileBaseline)
+	if err := errors.Join(
+		setU32(out, &mtAvgBitrate, uint32(kbps*1000)),
+		setU64(out, &mtFrameRate, uint32(e.fps), 1),
+		setU64(out, &mtFrameSize, uint32(e.pw), uint32(e.ph)),
+		setU32(out, &mtInterlace, 2), // MFVideoInterlace_Progressive
+		setU32(out, &mtProfile, profileBaseline),
+	); err != nil {
+		return err
+	}
 	if hr := t.call(mftSetOutputType, 0, uintptr(unsafe.Pointer(out)), 0); failed(hr) {
 		return hrErr("encoder SetOutputType", hr)
 	}
@@ -358,9 +378,13 @@ func (e *Encoder) init(kbps int) error {
 		return err
 	}
 	defer in.release()
-	setU64(in, &mtFrameRate, uint32(e.fps), 1)
-	setU64(in, &mtFrameSize, uint32(e.pw), uint32(e.ph))
-	setU32(in, &mtInterlace, 2)
+	if err := errors.Join(
+		setU64(in, &mtFrameRate, uint32(e.fps), 1),
+		setU64(in, &mtFrameSize, uint32(e.pw), uint32(e.ph)),
+		setU32(in, &mtInterlace, 2),
+	); err != nil {
+		return err
+	}
 	if hr := t.call(mftSetInputType, 0, uintptr(unsafe.Pointer(in)), 0); failed(hr) {
 		return hrErr("encoder SetInputType", hr)
 	}
@@ -422,12 +446,16 @@ func (e *Encoder) ForceKeyFrame() error {
 
 // Close releases the encoder. It is safe to call more than once.
 func (e *Encoder) Close() {
+	if e == nil {
+		return
+	}
 	e.api.release()
 	e.mft.release()
 	e.api, e.mft = nil, nil
 }
 
 // Decoder turns H.264 Annex B access units back into RGBA frames.
+// It is not safe for concurrent use.
 type Decoder struct {
 	mft          *com
 	stride, rows int // NV12 layout of the negotiated output
@@ -453,8 +481,11 @@ func (d *Decoder) init() error {
 	if hr := d.mft.call(mftGetAttributes, uintptr(unsafe.Pointer(&attrs))); failed(hr) {
 		return hrErr("decoder GetAttributes", hr)
 	}
-	setU32(attrs, &lowLatency, 1) // MF_LOW_LATENCY: one output per input
+	err := setU32(attrs, &lowLatency, 1) // MF_LOW_LATENCY: one output per input
 	attrs.release()
+	if err != nil {
+		return err
+	}
 	in, err := newType(&formatH264)
 	if err != nil {
 		return err
@@ -556,6 +587,9 @@ func (d *Decoder) Decode(au []byte, w, h int) (*image.RGBA, error) {
 
 // Close releases the decoder. It is safe to call more than once.
 func (d *Decoder) Close() {
+	if d == nil {
+		return
+	}
 	d.mft.release()
 	d.mft = nil
 }
