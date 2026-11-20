@@ -40,7 +40,7 @@ It works directly on a LAN, or over the internet using the built-in Tailscale su
 ## Download
 
 <!-- release:start -->
-**Latest release: [`v1.0.4`](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/tag/v1.0.4)** (2026-11-09) · [release notes](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/tag/v1.0.4) · [raphost.exe](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/download/v1.0.4/raphost.exe) · [rapview.exe](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/download/v1.0.4/rapview.exe)
+**Latest release: [`v2.0.0`](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/tag/v2.0.0)** (2026-11-11) · [release notes](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/tag/v2.0.0) · [raphost.exe](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/download/v2.0.0/raphost.exe) · [rapview.exe](https://github.com/Bidyut-Kr-Das/remote-access-protocol/releases/download/v2.0.0/rapview.exe)
 <!-- release:end -->
 
 These links always point at the newest release:
