@@ -168,6 +168,10 @@ func TestGrabFallsBackToGDI(t *testing.T) {
 			{time.Second, nil, nil, "gdi", 1, 0},
 			{2 * time.Second, nil, nil, "dxgi", 2, 0},
 		}},
+		{"bounds mismatch stops retrying", []step{
+			{0, errBoundsMismatch, nil, "gdi", 1, 0},
+			{time.Minute, nil, nil, "gdi", 1, 0},
+		}},
 		{"still screen serves cached frame", []step{
 			{0, nil, nil, "dxgi", 1, 0},
 			{time.Second, nil, errNoNewFrame, "dxgi", 1, 0},
@@ -207,7 +211,7 @@ func TestGrabFallsBackToGDI(t *testing.T) {
 		}
 		gdiGrab = func() (*image.RGBA, error) { return gdiImg, nil }
 		now = func() time.Time { return clock }
-		dxgi, dxgiOK, dxgiRetry, dxgiBuf = nil, false, time.Time{}, nil
+		dxgi, dxgiOK, dxgiRetry, dxgiBuf, dxgiNever, dxgiFailLogged = nil, false, time.Time{}, nil, false, false
 		for i, s := range c.steps {
 			cur, clock = s, t0.Add(s.at)
 			img, err := Grab()
@@ -222,6 +226,6 @@ func TestGrabFallsBackToGDI(t *testing.T) {
 			}
 		}
 		newDXGIFn, gdiGrab, now = oldNew, oldGDI, oldNow
-		dxgi, dxgiOK, dxgiRetry, dxgiBuf = nil, false, time.Time{}, nil
+		dxgi, dxgiOK, dxgiRetry, dxgiBuf, dxgiNever, dxgiFailLogged = nil, false, time.Time{}, nil, false, false
 	}
 }

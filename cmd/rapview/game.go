@@ -42,8 +42,9 @@ type game struct {
 	img      *ebiten.Image   // Draw only
 
 	// Reader goroutine only.
-	dec         *h264.Decoder // created on the first H.264 frame
-	warnedCodec bool
+	dec          *h264.Decoder // created on the first H.264 frame
+	warnedCodec  bool
+	warnedDecode bool // decode failure logged since the last good decode
 
 	dead      atomic.Bool
 	closeOnce sync.Once
@@ -87,13 +88,17 @@ func (g *game) frame(m protocol.Frame) {
 		}
 		rgba, err := g.dec.Decode(m.Data, int(m.W), int(m.H))
 		if err != nil {
-			// shortcut: no keyframe request; the host sends an IDR only on resize, so the picture
-			// may stay stale or broken until then. Add a keyframe-request message if this shows up.
-			log.Printf("h264: decode failed, dropping decoder (picture may be wrong until the next resize or reconnect): %v", err)
+			// shortcut: no keyframe request; the host sends an IDR only when its encoder is recreated (first frame,
+			// resize) and every GOP (10*fps sent frames), so the picture may stay broken until then. Add a keyframe-request message if this shows up.
+			if !g.warnedDecode {
+				g.warnedDecode = true
+				log.Printf("h264: decode failed, dropping decoder (picture may be wrong until the next keyframe, up to 10*fps sent frames): %v", err)
+			}
 			g.dec.Close()
 			g.dec = nil
 			return
 		}
+		g.warnedDecode = false
 		if rgba == nil {
 			return
 		}

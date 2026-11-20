@@ -41,7 +41,10 @@ type dxgiGrabber struct {
 
 func (g *dxgiGrabber) grab(dst *image.RGBA) error { return g.frame(dst) }
 
-var errNoNewFrame = errors.New("capture: no new DXGI frame")
+var (
+	errNoNewFrame     = errors.New("capture: no new DXGI frame")
+	errBoundsMismatch = errors.New("capture: DXGI output is not display 0") // permanent: stop retrying
+)
 
 const dxgiRetryEvery = 2 * time.Second
 
@@ -53,11 +56,13 @@ var (
 )
 
 var (
-	dxgiMu    sync.Mutex
-	dxgi      *dxgiGrabber
-	dxgiBuf   *image.RGBA // holds the last DXGI frame
-	dxgiOK    bool        // dxgiBuf holds a frame from the current dxgi
-	dxgiRetry time.Time   // no DXGI init before this
+	dxgiMu         sync.Mutex
+	dxgi           *dxgiGrabber
+	dxgiBuf        *image.RGBA // holds the last DXGI frame
+	dxgiOK         bool        // dxgiBuf holds a frame from the current dxgi
+	dxgiRetry      time.Time   // no DXGI init before this
+	dxgiNever      bool        // DXGI can never match display 0: GDI for the process
+	dxgiFailLogged bool        // init failure already logged since DXGI last worked
 )
 
 // Grab captures the primary display, through DXGI Desktop Duplication when it works and GDI
@@ -66,12 +71,19 @@ var (
 func Grab() (*image.RGBA, error) {
 	dxgiMu.Lock()
 	defer dxgiMu.Unlock()
-	if dxgi == nil && !now().Before(dxgiRetry) {
+	if dxgi == nil && !dxgiNever && !now().Before(dxgiRetry) {
 		g, err := newDXGIFn()
 		if err != nil {
-			log.Printf("capture: DXGI unavailable, using GDI: %v", err)
+			if errors.Is(err, errBoundsMismatch) {
+				dxgiNever = true
+				log.Printf("capture: DXGI unusable, using GDI permanently: %v", err)
+			} else if !dxgiFailLogged {
+				log.Printf("capture: DXGI unavailable, using GDI: %v", err)
+			}
+			dxgiFailLogged = true
 			dxgiRetry = now().Add(dxgiRetryEvery)
 		} else {
+			dxgiFailLogged = false
 			log.Print("capture: using DXGI")
 			dxgi, dxgiOK = g, false
 			if dxgiBuf == nil || dxgiBuf.Rect != g.rect {

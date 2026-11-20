@@ -349,7 +349,8 @@ func (e *Encoder) init(kbps int) error {
 	}{
 		{&apiRateControl, 0}, // eAVEncCommonRateControlMode_CBR
 		{&apiMeanBitrate, uint32(kbps * 1000)},
-		{&apiGOPSize, uint32(2 * e.fps)}, // P7: ~2 s GOP
+		// GOP counts sent frames (the host sends only on change): long keeps IDRs rare and small, still self-heals after a viewer decode error.
+		{&apiGOPSize, uint32(10 * e.fps)},
 		{&apiBFrames, 0},
 	} {
 		if hr := setCodecU32(e.api, s.key, s.v); failed(hr) {

@@ -32,7 +32,7 @@ func newDXGI() (*dxgiGrabber, error) {
 	}
 	b, err := dup.GetBounds()
 	if want := screenshot.GetDisplayBounds(0); err == nil && b != want {
-		err = fmt.Errorf("DXGI output 0 %v is not display 0 %v", b, want)
+		err = fmt.Errorf("%w: DXGI output 0 %v is not display 0 %v", errBoundsMismatch, b, want)
 	}
 	if err != nil {
 		release()
