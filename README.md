@@ -88,6 +88,9 @@ Diagram sources (editable HTML) live in [`docs/diagrams/`](docs/diagrams/).
 | `-port` | `7700` | TCP port to listen on |
 | `-tsnet` | off | Join your tailnet with the built-in Tailscale and listen there instead of on the LAN |
 | `-relogin` | off | With `-tsnet`: forget the saved Tailscale login and sign in again, e.g. to switch account |
+| `-window` | `3` | Frame batches in flight before waiting for viewer acks (1 = stop-and-wait) |
+| `-codec` | `auto` | `auto` (H.264 via Windows Media Foundation when host and viewer support it, else JPEG) or `jpeg`. v2.0.0 viewers keep working with new hosts (they get JPEG) |
+| `-bitrate` | `4000` | H.264 bitrate in kbps |
 
 Allow it when Windows Firewall prompts (not needed with `-tsnet`). The host logs `listening on ... (<width>x<height>)` and then one line per session start and end.
 
@@ -218,6 +221,7 @@ docs/
 | Clicks or keys do nothing in some windows | Windows blocks input into elevated (administrator) windows (UIPI) unless `raphost` itself runs elevated. |
 | Win key, Alt+Tab or Ctrl+Alt+Del act on A | The OS keeps these; they are not forwarded. |
 | Choppy picture over the internet | B's upload is the limit; frames are skipped rather than queued. |
+| Laggy or slow stream | Read the logs. With `-tsnet`, the viewer prints `path: direct ...` or `path: relay ...` at connect and again about 10 s later. `relay` (Tailscale DERP) adds a lot of latency: allow outbound UDP, avoid symmetric NAT/CGNAT where possible, and check with `tailscale netcheck` and `tailscale ping <peer>` (needs the Tailscale install; the built-in `-tsnet` has no CLI). While frames are being sent, the host prints a `stream:` line every 2 s with fps, rects/s, KB/s, per-frame averages `grab`/`scale`/`enc`/`write`/`wait`, `skipped` frames and `codec`. High `wait`: network round trip or bandwidth limit (frames waiting for the viewer's acks). High `grab`: slow capture, e.g. DXGI fell back to GDI at a UAC prompt or the lock screen. High `enc`: host CPU. KB/s: bandwidth used. `codec` is `h264` or `jpeg`. |
 | With `-tsnet`, the program keeps waiting on the Tailscale login page | That PC is not signed in to Tailscale yet. Finish signing in on the login page that opened in your browser (the URL is also printed once); the program continues on its own once sign-in finishes. |
 | With `-tsnet`, the viewer cannot reach the host | Make sure both PCs are signed into the **same** Tailscale account. If the `rap-<computer name>` name does not resolve, pass the `100.x.y.z` IP that `raphost` prints on startup to `-host` instead. |
 
